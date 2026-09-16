@@ -8,7 +8,7 @@ const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = 3000;
 const HOST = '0.0.0.0';
 
 async function bootstrap() {
