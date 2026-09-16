@@ -276,6 +276,17 @@ export function TitleScreen({ onCreateRoom, onJoinRoom, onQuickSolo }: TitleScre
           </div>
         </div>
       </div>
+
+      {/* Footer Credits */}
+      <div
+        id="title-footer-credits"
+        className="absolute bottom-3 sm:bottom-4 left-0 right-0 z-20 flex items-center justify-center pointer-events-none px-4"
+      >
+        <p className="text-xs font-medium tracking-widest text-[#c8aa6e]/85 uppercase flex items-center gap-1.5 bg-[#09141d]/80 px-3.5 py-1 rounded-full border border-[#c8aa6e]/30 shadow-lg backdrop-blur-sm">
+          <span>Created by</span>
+          <span className="text-[#f0e6d2] font-bold tracking-wider">Ayaan Khan</span>
+        </p>
+      </div>
     </div>
   );
 }
