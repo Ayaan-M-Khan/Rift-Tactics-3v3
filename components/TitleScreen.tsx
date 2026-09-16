@@ -138,7 +138,7 @@ export function TitleScreen({ onCreateRoom, onJoinRoom, onQuickSolo }: TitleScre
   };
 
   return (
-    <div id="title-screen-container" className="relative w-full h-[100dvh] flex flex-col items-center justify-center overflow-hidden select-none">
+    <div id="title-screen-container" className="relative w-full h-[100dvh] flex flex-col items-center justify-center overflow-hidden select-none animate-fade-in">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
       {/* Top Bar with Audio Control */}
@@ -154,7 +154,10 @@ export function TitleScreen({ onCreateRoom, onJoinRoom, onQuickSolo }: TitleScre
       </div>
 
       {/* Main Title Container */}
-      <div className="relative z-10 w-full max-w-md px-6 py-8 mx-auto flex flex-col items-center">
+      <div
+        id="main-title-container"
+        className="relative z-10 w-full max-w-md px-6 py-8 mx-auto flex flex-col items-center animate-fade-in"
+      >
         {/* Hextech Emblem Header */}
         <div className="relative mb-6 text-center">
           <div className="inline-flex items-center justify-center p-3 mb-2 rounded-full border-2 border-[#c8aa6e] bg-[#005a82]/30 shadow-[0_0_25px_rgba(10,200,185,0.4)]">

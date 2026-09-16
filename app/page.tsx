@@ -30,15 +30,33 @@ export default function RiftTacticsPage() {
 
     const handleRoomUpdated = (updatedRoom: GameRoomState) => {
       setRoom(updatedRoom);
+      setIsLoading(false);
     };
 
     const handleConnect = () => {
       setConnectionError(null);
+
+      // Automatically emit reconnect_session using stored sessionToken and roomCode to restore game state
+      const saved = loadSession();
+      if (saved && saved.sessionToken) {
+        socket.emit(
+          'reconnect_session',
+          { sessionToken: saved.sessionToken, roomCode: saved.roomCode },
+          (res: { success: boolean; room?: GameRoomState; player?: { id: string } }) => {
+            if (res && res.success && res.room && res.player) {
+              setRoom(res.room);
+              setPlayerId(res.player.id);
+            }
+            setIsLoading(false);
+          }
+        );
+      } else {
+        setIsLoading(false);
+      }
     };
 
     const handleConnectError = () => {
-      setConnectionError('Unable to connect to game server. Running in offline/title mode.');
-      clearGameSession();
+      setConnectionError('Network connection interrupted. Reconnecting...');
       setIsLoading(false);
     };
 
@@ -46,7 +64,7 @@ export default function RiftTacticsPage() {
       if (reason === 'io server disconnect') {
         socket.connect();
       }
-      setConnectionError('Disconnected from game server. Attempting to reconnect...');
+      setConnectionError('Network connection interrupted. Reconnecting...');
     };
 
     socket.on('room_updated', handleRoomUpdated);
@@ -54,36 +72,8 @@ export default function RiftTacticsPage() {
     socket.on('connect_error', handleConnectError);
     socket.on('disconnect', handleDisconnect);
 
-    // Auto-reconnect stored session with 5s safety timeout
-    const saved = loadSession();
-    if (saved && saved.sessionToken) {
-      let isSettled = false;
-      const timeoutId = setTimeout(() => {
-        if (!isSettled) {
-          isSettled = true;
-          clearGameSession();
-          setIsLoading(false);
-        }
-      }, 5000);
-
-      socket.emit(
-        'reconnect_session',
-        { sessionToken: saved.sessionToken },
-        (res: { success: boolean; room?: GameRoomState; player?: { id: string } }) => {
-          if (!isSettled) {
-            isSettled = true;
-            clearTimeout(timeoutId);
-            if (res && res.success && res.room && res.player) {
-              setRoom(res.room);
-              setPlayerId(res.player.id);
-            } else {
-              clearGameSession();
-              setRoom(null);
-            }
-            setIsLoading(false);
-          }
-        }
-      );
+    if (socket.connected) {
+      handleConnect();
     }
 
     return () => {

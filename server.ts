@@ -22,6 +22,13 @@ async function bootstrap() {
   const io = new SocketIOServer(server, {
     cors: { origin: '*', methods: ['GET', 'POST'] },
     transports: ['websocket', 'polling'],
+    pingInterval: 10000,
+    pingTimeout: 30000,
+    upgradeTimeout: 30000,
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 2 * 60 * 1000,
+      skipMiddlewares: true,
+    },
   });
 
   const gameEngine = new GameEngine((room) => {

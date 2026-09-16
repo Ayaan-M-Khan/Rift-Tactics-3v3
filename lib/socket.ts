@@ -11,11 +11,22 @@ export function getSocket(): Socket {
     socketInstance = io(socketUrl, {
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      timeout: 8000,
+      reconnectionDelayMax: 5000,
+      randomizationFactor: 0.5,
+      timeout: 20000,
       transports: ['websocket', 'polling'],
+      upgrade: true,
     });
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        if (socketInstance && !socketInstance.connected) {
+          socketInstance.connect();
+        }
+      });
+    }
   }
   return socketInstance;
 }
