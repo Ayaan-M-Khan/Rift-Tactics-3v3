@@ -1,0 +1,68 @@
+import { SummonerSpellData, SummonerSpellId } from '../types/game';
+
+export const SUMMONER_SPELLS: Record<SummonerSpellId, SummonerSpellData> = {
+  flash: {
+    id: 'flash',
+    name: 'Flash',
+    description: 'Teleport your champion up to 2 tiles in any direction, bypassing obstacles.',
+    icon: '⚡',
+    range: 2,
+    targetType: 'tile',
+  },
+  ignite: {
+    id: 'ignite',
+    name: 'Ignite',
+    description: 'Target an enemy within 3 tiles, dealing 90 true damage and reducing healing for 2 turns.',
+    icon: '🔥',
+    range: 3,
+    targetType: 'enemy',
+  },
+  heal: {
+    id: 'heal',
+    name: 'Heal',
+    description: 'Restore 130 HP to yourself and the nearest allied champion, granting +1 movement for 1 turn.',
+    icon: '💚',
+    range: 0,
+    targetType: 'self',
+  },
+  barrier: {
+    id: 'barrier',
+    name: 'Barrier',
+    description: 'Shield yourself for 160 damage for 1 round.',
+    icon: '🛡️',
+    range: 0,
+    targetType: 'self',
+  },
+  ghost: {
+    id: 'ghost',
+    name: 'Ghost',
+    description: 'Gain +2 movement tiles on your current turn and ignore unit collision.',
+    icon: '👻',
+    range: 0,
+    targetType: 'self',
+  },
+  exhaust: {
+    id: 'exhaust',
+    name: 'Exhaust',
+    description: 'Exhaust an enemy within 3 tiles, reducing their damage dealt by 40% and movement by 1 for 1 turn.',
+    icon: '🌀',
+    range: 3,
+    targetType: 'enemy',
+  },
+  snowball: {
+    id: 'snowball',
+    name: 'Snowball',
+    description: 'Throw a long-range snowball up to 5 tiles dealing 60 true damage and tagging target.',
+    icon: '❄️',
+    range: 5,
+    targetType: 'enemy',
+  },
+  cleanse: {
+    id: 'cleanse',
+    name: 'Cleanse',
+    description: 'Instantly remove all stuns, roots, silences, and slows from yourself.',
+    icon: '✨',
+    range: 0,
+    targetType: 'self',
+  },
+};

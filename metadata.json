@@ -1,0 +1,8 @@
+{
+  "name": "Rift Tactics - Summoner's Mid Lane 3v3",
+  "description": "A turn-based multiplayer tactical combat game set in Summoner's Rift Mid Lane featuring 3v3 champion draft, tactical grid combat, turrets, minions, and shop system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
