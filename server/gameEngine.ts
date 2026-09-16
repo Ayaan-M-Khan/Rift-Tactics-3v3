@@ -37,7 +37,7 @@ import {
 export class GameEngine {
   private rooms: Map<string, GameRoomState> = new Map();
   private playerSessions: Map<string, { roomCode: string; playerId: string }> = new Map();
-  private turnTimers: Map<string, NodeJS.Timeout> = new Map();
+  private turnTimers: Map<string, ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>> = new Map();
   private onRoomUpdated?: (room: GameRoomState) => void;
 
   constructor(onRoomUpdated?: (room: GameRoomState) => void) {

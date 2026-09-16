@@ -2,11 +2,11 @@ import { io, Socket } from 'socket.io-client';
 
 let socketInstance: Socket | null = null;
 
-export function getSocket(): Socket {
+export const getSocket = (): Socket => {
   if (!socketInstance) {
     const socketUrl =
       process.env.NEXT_PUBLIC_SOCKET_URL ||
-      (typeof window !== 'undefined' ? window.location.origin : '');
+      (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
 
     socketInstance = io(socketUrl, {
       autoConnect: true,
@@ -18,18 +18,20 @@ export function getSocket(): Socket {
       timeout: 20000,
       transports: ['websocket', 'polling'],
       upgrade: true,
+      withCredentials: false,
     });
 
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
         if (socketInstance && !socketInstance.connected) {
+          console.log('[Network] Wi-Fi restored. Reconnecting socket...');
           socketInstance.connect();
         }
       });
     }
   }
   return socketInstance;
-}
+};
 
 export interface SavedSession {
   roomCode: string;

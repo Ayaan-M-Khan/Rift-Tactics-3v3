@@ -8,7 +8,7 @@ const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
 
 async function bootstrap() {
@@ -20,7 +20,11 @@ async function bootstrap() {
   });
 
   const io = new SocketIOServer(server, {
-    cors: { origin: '*', methods: ['GET', 'POST'] },
+    cors: {
+      origin: '*',
+      methods: ['GET', 'POST'],
+      credentials: false,
+    },
     transports: ['websocket', 'polling'],
     pingInterval: 10000,
     pingTimeout: 30000,

@@ -5,12 +5,18 @@ import { sounds } from '../lib/soundEngine';
 import { Volume2, VolumeX, Shield, Swords, Sparkles, Users } from 'lucide-react';
 
 interface TitleScreenProps {
+  isServerConnected?: boolean;
   onCreateRoom: (hostName: string) => void;
   onJoinRoom: (roomCode: string, playerName: string) => void;
   onQuickSolo: (hostName: string) => void;
 }
 
-export function TitleScreen({ onCreateRoom, onJoinRoom, onQuickSolo }: TitleScreenProps) {
+export function TitleScreen({
+  isServerConnected = true,
+  onCreateRoom,
+  onJoinRoom,
+  onQuickSolo,
+}: TitleScreenProps) {
   const [playerName, setPlayerName] = useState('Summoner');
   const [roomCode, setRoomCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
@@ -173,6 +179,21 @@ export function TitleScreen({ onCreateRoom, onJoinRoom, onQuickSolo }: TitleScre
             <span className="h-[1px] w-12 bg-gradient-to-r from-transparent to-[#c8aa6e]/60"></span>
             <span className="text-[10px] text-[#c8aa6e]/80 tracking-widest uppercase">Tactical Turn-Based Combat</span>
             <span className="h-[1px] w-12 bg-gradient-to-l from-transparent to-[#c8aa6e]/60"></span>
+          </div>
+
+          {/* Server / Offline Mode Status Indicator */}
+          <div id="status-server-indicator" className="mt-3 flex justify-center">
+            {isServerConnected ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                <span>Online Multiplayer Ready</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/70 border border-amber-500/40 text-amber-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
+                <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
+                <span>Offline Mode (Solo vs AI Available)</span>
+              </div>
+            )}
           </div>
         </div>
 
