@@ -20,7 +20,8 @@ async function bootstrap() {
   });
 
   const io = new SocketIOServer(server, {
-    cors: { origin: '*' },
+    cors: { origin: '*', methods: ['GET', 'POST'] },
+    transports: ['websocket', 'polling'],
   });
 
   const gameEngine = new GameEngine((room) => {
@@ -32,14 +33,18 @@ async function bootstrap() {
     socket.on('create_room', ({ hostName }, callback) => {
       const result = gameEngine.createRoom(hostName, socket.id);
       socket.join(result.room.roomCode);
+      socket.data.roomCode = result.room.roomCode;
+      socket.data.playerId = result.playerId;
       if (typeof callback === 'function') callback(result);
     });
 
     // 2. Join Room
     socket.on('join_room', ({ roomCode, playerName }, callback) => {
       const result = gameEngine.joinRoom(roomCode, playerName, socket.id);
-      if (result.success && result.room) {
+      if (result.success && result.room && result.playerId) {
         socket.join(result.room.roomCode);
+        socket.data.roomCode = result.room.roomCode;
+        socket.data.playerId = result.playerId;
       }
       if (typeof callback === 'function') callback(result);
     });
@@ -47,8 +52,10 @@ async function bootstrap() {
     // 3. Reconnect Session
     socket.on('reconnect_session', ({ sessionToken }, callback) => {
       const result = gameEngine.reconnectPlayer(sessionToken, socket.id);
-      if (result.success && result.room) {
+      if (result.success && result.room && result.player) {
         socket.join(result.room.roomCode);
+        socket.data.roomCode = result.room.roomCode;
+        socket.data.playerId = result.player.id;
       }
       if (typeof callback === 'function') callback(result);
     });
@@ -79,14 +86,41 @@ async function bootstrap() {
 
     // 8. Lock Ban
     socket.on('lock_ban', ({ roomCode, playerId, championId }, callback) => {
-      const success = gameEngine.lockBan(roomCode, playerId, championId);
+      const targetRoom = roomCode || socket.data.roomCode;
+      const targetPlayer = playerId || socket.data.playerId;
+      const success = gameEngine.lockBan(targetRoom, targetPlayer, championId);
+      if (typeof callback === 'function') callback({ success });
+    });
+
+    socket.on('draft_ban', ({ roomCode, playerId, championId }, callback) => {
+      const targetRoom = roomCode || socket.data.roomCode;
+      const targetPlayer = playerId || socket.data.playerId;
+      const success = gameEngine.lockBan(targetRoom, targetPlayer, championId);
       if (typeof callback === 'function') callback({ success });
     });
 
     // 9. Lock Pick
     socket.on('lock_pick', ({ roomCode, playerId, championId }, callback) => {
-      const success = gameEngine.lockPick(roomCode, playerId, championId);
+      const targetRoom = roomCode || socket.data.roomCode;
+      const targetPlayer = playerId || socket.data.playerId;
+      const success = gameEngine.lockPick(targetRoom, targetPlayer, championId);
       if (typeof callback === 'function') callback({ success });
+    });
+
+    socket.on('draft_lock', ({ roomCode, playerId, championId }, callback) => {
+      const targetRoom = roomCode || socket.data.roomCode;
+      const targetPlayer = playerId || socket.data.playerId;
+      const success = gameEngine.lockPick(targetRoom, targetPlayer, championId);
+      if (typeof callback === 'function') callback({ success });
+    });
+
+    // Draft Hover / Selection
+    socket.on('draft_select', ({ roomCode, playerId, championId }) => {
+      const targetRoom = roomCode || socket.data.roomCode;
+      const targetPlayer = playerId || socket.data.playerId;
+      if (targetRoom) {
+        io.to(targetRoom).emit('draft_hovered', { playerId: targetPlayer, championId });
+      }
     });
 
     // 10. Set Summoner Spell

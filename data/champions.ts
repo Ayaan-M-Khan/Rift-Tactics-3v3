@@ -1,4 +1,5 @@
 import { ChampionData } from '../types/game';
+import ddragonData from './ddragon_champions.json';
 
 export const CHAMPIONS: Record<string, ChampionData> = {
   jinx: {
@@ -895,3 +896,115 @@ export const CHAMPIONS: Record<string, ChampionData> = {
     ],
   },
 };
+
+// Augment CHAMPIONS with all 170+ Riot Data Dragon champions
+if (ddragonData && ddragonData.champions) {
+  for (const [key, c] of Object.entries(ddragonData.champions as Record<string, any>)) {
+      const lowerKey = key.toLowerCase();
+      const existing = CHAMPIONS[key] || CHAMPIONS[lowerKey];
+      if (!existing) {
+        const isRanged = c.stats.attackRange > 1;
+        const isMage = (c.tags || []).includes('Mage');
+        const isSupport = (c.tags || []).includes('Support');
+        const isJungle = (c.tags || []).includes('Assassin') || (c.roles || []).includes('JUNGLE');
+
+        const role = isSupport ? 'support' : isJungle ? 'jungle' : 'carry';
+
+        const synthesizedAbilities = (c.abilities || []).map((ab: any, idx: number) => {
+          const abKey = (ab.key || ['Q', 'W', 'E', 'R'][idx] || 'Q') as 'Q' | 'W' | 'E' | 'R';
+          return {
+            key: abKey,
+            name: ab.name || `Ability ${abKey}`,
+            description: ab.description || 'Deals tactical damage to target.',
+            manaCost: abKey === 'R' ? 100 : 40 + idx * 10,
+            cooldownRounds: abKey === 'R' ? 3 : idx + 1,
+            currentCooldown: 0,
+            range: isRanged ? 4 : (idx === 0 ? 2 : 1),
+            targetType: idx === 0 ? 'line' : idx === 3 ? 'aoe' : 'single_enemy',
+            areaRadius: idx === 3 ? 1 : undefined,
+            baseDamage: abKey === 'R' ? 180 : 70 + idx * 25,
+            scaling: { stat: isMage ? 'ap' : 'ad', ratio: isMage ? 0.7 : 0.8 },
+            damageType: isMage ? 'magic' : 'physical',
+            statusEffect: idx === 1 ? 'slow' : idx === 3 ? 'stun' : undefined,
+          };
+        });
+
+        const champEntry: ChampionData = {
+          id: c.id,
+          name: c.name,
+          title: c.title,
+          role,
+          secondaryRole: (c.tags && c.tags[0]) || 'Champion',
+          avatarColor: isMage ? '#3b82f6' : isSupport ? '#10b981' : isRanged ? '#ec4899' : '#eab308',
+          accentColor: '#c8aa6e',
+          iconText: c.name.slice(0, 2),
+          lore: c.title,
+          baseHp: c.stats.hp || 580,
+          baseMana: c.stats.mp || 300,
+          baseAd: c.stats.attackDamage || 60,
+          baseAp: isMage ? 60 : 0,
+          baseArmor: c.stats.armor || 32,
+          baseMr: 30,
+          attackRange: c.stats.attackRange || (isRanged ? 3 : 1),
+          moveSpeed: 3,
+          abilities: synthesizedAbilities.length === 4 ? synthesizedAbilities : [
+            {
+              key: 'Q',
+              name: 'Strike',
+              description: 'Strikes target enemy dealing 80 damage.',
+              manaCost: 40,
+              cooldownRounds: 1,
+              currentCooldown: 0,
+              range: isRanged ? 4 : 1,
+              targetType: 'single_enemy',
+              baseDamage: 80,
+              damageType: 'physical',
+            },
+            {
+              key: 'W',
+              name: 'Guard',
+              description: 'Gains 100 shield for 1 turn.',
+              manaCost: 50,
+              cooldownRounds: 2,
+              currentCooldown: 0,
+              range: 1,
+              targetType: 'self',
+              shieldAmount: 100,
+            },
+            {
+              key: 'E',
+              name: 'Assault',
+              description: 'Damages and slows target for 1 turn.',
+              manaCost: 60,
+              cooldownRounds: 2,
+              currentCooldown: 0,
+              range: 2,
+              targetType: 'single_enemy',
+              baseDamage: 90,
+              statusEffect: 'slow',
+            },
+            {
+              key: 'R',
+              name: 'Ultimate',
+              description: 'Unleashes ultimate power dealing 200 damage to target.',
+              manaCost: 100,
+              cooldownRounds: 3,
+              currentCooldown: 0,
+              range: isRanged ? 4 : 2,
+              targetType: 'single_enemy',
+              baseDamage: 200,
+              damageType: 'physical',
+              statusEffect: 'stun',
+            },
+          ],
+        };
+
+        CHAMPIONS[c.id] = champEntry;
+        CHAMPIONS[lowerKey] = champEntry;
+      } else {
+        // Also ensure both cases exist in CHAMPIONS
+        CHAMPIONS[c.id] = existing;
+        CHAMPIONS[lowerKey] = existing;
+      }
+    }
+  }

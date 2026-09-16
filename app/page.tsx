@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { GameRoomState, ItemId, Role, SummonerSpellId, Team } from '../types/game';
-import { getSocket, loadSession, saveSession } from '../lib/socket';
+import { getSocket, loadSession, saveSession, clearGameSession } from '../lib/socket';
 import { TitleScreen } from '../components/TitleScreen';
 import { LobbyScreen } from '../components/LobbyScreen';
 import { DraftScreen } from '../components/DraftScreen';
@@ -16,28 +16,81 @@ export default function RiftTacticsPage() {
   const [targetMode, setTargetMode] = useState<TargetSelectionMode>({ type: 'none' });
   const [spectatorTargetId, setSpectatorTargetId] = useState<string | undefined>(undefined);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = loadSession();
+      return !!(saved && saved.sessionToken);
+    }
+    return false;
+  });
 
   // Initialize socket and attempt session restore
   useEffect(() => {
     const socket = getSocket();
 
-    socket.on('room_updated', (updatedRoom: GameRoomState) => {
+    const handleRoomUpdated = (updatedRoom: GameRoomState) => {
       setRoom(updatedRoom);
-    });
+    };
 
-    // Auto-reconnect stored session
+    const handleConnect = () => {
+      setConnectionError(null);
+    };
+
+    const handleConnectError = () => {
+      setConnectionError('Unable to connect to game server. Running in offline/title mode.');
+      clearGameSession();
+      setIsLoading(false);
+    };
+
+    const handleDisconnect = (reason: string) => {
+      if (reason === 'io server disconnect') {
+        socket.connect();
+      }
+      setConnectionError('Disconnected from game server. Attempting to reconnect...');
+    };
+
+    socket.on('room_updated', handleRoomUpdated);
+    socket.on('connect', handleConnect);
+    socket.on('connect_error', handleConnectError);
+    socket.on('disconnect', handleDisconnect);
+
+    // Auto-reconnect stored session with 5s safety timeout
     const saved = loadSession();
     if (saved && saved.sessionToken) {
-      socket.emit('reconnect_session', { sessionToken: saved.sessionToken }, (res: { success: boolean; room?: GameRoomState; player?: { id: string } }) => {
-        if (res.success && res.room && res.player) {
-          setRoom(res.room);
-          setPlayerId(res.player.id);
+      let isSettled = false;
+      const timeoutId = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          clearGameSession();
+          setIsLoading(false);
         }
-      });
+      }, 5000);
+
+      socket.emit(
+        'reconnect_session',
+        { sessionToken: saved.sessionToken },
+        (res: { success: boolean; room?: GameRoomState; player?: { id: string } }) => {
+          if (!isSettled) {
+            isSettled = true;
+            clearTimeout(timeoutId);
+            if (res && res.success && res.room && res.player) {
+              setRoom(res.room);
+              setPlayerId(res.player.id);
+            } else {
+              clearGameSession();
+              setRoom(null);
+            }
+            setIsLoading(false);
+          }
+        }
+      );
     }
 
     return () => {
-      socket.off('room_updated');
+      socket.off('room_updated', handleRoomUpdated);
+      socket.off('connect', handleConnect);
+      socket.off('connect_error', handleConnectError);
+      socket.off('disconnect', handleDisconnect);
     };
   }, []);
 
@@ -231,12 +284,41 @@ export default function RiftTacticsPage() {
   return (
     <main className="w-screen h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden bg-[#04090d] text-[#f0e6d2]">
       {connectionError && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-rose-950 border border-rose-500 text-rose-200 px-4 py-2 rounded-md text-xs font-bold shadow-lg">
-          {connectionError}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-rose-950/90 border border-rose-500/80 text-rose-200 px-4 py-2.5 rounded-lg text-xs font-semibold shadow-xl flex items-center gap-3 backdrop-blur-md">
+          <span>{connectionError}</span>
+          <button
+            onClick={() => setConnectionError(null)}
+            className="text-rose-400 hover:text-white transition-colors text-sm font-bold px-1"
+            title="Dismiss"
+          >
+            ✕
+          </button>
         </div>
       )}
 
-      {!room ? (
+      {isLoading ? (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-[#050b10] px-4">
+          <div className="relative flex items-center justify-center mb-6">
+            <div className="w-16 h-16 rounded-full border-2 border-[#0ac8b9]/30 border-t-[#0ac8b9] animate-spin" />
+            <div className="absolute text-xl">⚔️</div>
+          </div>
+          <h2 className="text-xl font-bold tracking-widest text-[#f0e6d2] uppercase font-serif mb-1">
+            Rift Tactics
+          </h2>
+          <p className="text-xs text-[#0ac8b9] tracking-wider uppercase mb-6 font-mono">
+            Connecting to Summoner&apos;s Rift...
+          </p>
+          <button
+            onClick={() => {
+              clearGameSession();
+              setIsLoading(false);
+            }}
+            className="px-4 py-1.5 rounded bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-medium border border-zinc-700/60 transition-colors"
+          >
+            Cancel & Return to Title
+          </button>
+        </div>
+      ) : !room ? (
         <TitleScreen
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}

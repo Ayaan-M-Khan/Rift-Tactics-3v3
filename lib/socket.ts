@@ -4,17 +4,21 @@ let socketInstance: Socket | null = null;
 
 export function getSocket(): Socket {
   if (!socketInstance) {
-    socketInstance = io({
+    const socketUrl =
+      process.env.NEXT_PUBLIC_SOCKET_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : '');
+
+    socketInstance = io(socketUrl, {
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      timeout: 8000,
+      transports: ['websocket', 'polling'],
     });
   }
   return socketInstance;
 }
-
-const SESSION_KEY = 'rift_tactics_session';
 
 export interface SavedSession {
   roomCode: string;
@@ -23,10 +27,18 @@ export interface SavedSession {
   playerName: string;
 }
 
+const SESSION_KEY = 'rift_tactics_session';
+
 export function saveSession(session: SavedSession) {
   if (typeof window !== 'undefined') {
     try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      const serialized = JSON.stringify(session);
+      localStorage.setItem(SESSION_KEY, serialized);
+      localStorage.setItem('sessionToken', session.sessionToken);
+      localStorage.setItem('roomCode', session.roomCode);
+      localStorage.setItem('playerId', session.playerId);
+      localStorage.setItem('playerName', session.playerName);
+      sessionStorage.setItem(SESSION_KEY, serialized);
     } catch {
       // ignore
     }
@@ -36,8 +48,17 @@ export function saveSession(session: SavedSession) {
 export function loadSession(): SavedSession | null {
   if (typeof window !== 'undefined') {
     try {
-      const data = sessionStorage.getItem(SESSION_KEY);
-      if (data) return JSON.parse(data);
+      const data = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY);
+      if (data) {
+        return JSON.parse(data);
+      }
+      const token = localStorage.getItem('sessionToken');
+      const roomCode = localStorage.getItem('roomCode');
+      const playerId = localStorage.getItem('playerId');
+      const playerName = localStorage.getItem('playerName') || 'Summoner';
+      if (token && roomCode && playerId) {
+        return { sessionToken: token, roomCode, playerId, playerName };
+      }
     } catch {
       // ignore
     }
@@ -45,12 +66,20 @@ export function loadSession(): SavedSession | null {
   return null;
 }
 
-export function clearSession() {
+export function clearGameSession() {
   if (typeof window !== 'undefined') {
     try {
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem('sessionToken');
+      localStorage.removeItem('roomCode');
+      localStorage.removeItem('playerId');
+      localStorage.removeItem('playerName');
       sessionStorage.removeItem(SESSION_KEY);
     } catch {
       // ignore
     }
   }
 }
+
+export const clearSession = clearGameSession;
+
