@@ -3,6 +3,7 @@ services:
     name: rift-tactics-3v3
     runtime: node
     plan: free
+    healthCheckPath: /healthz
     buildCommand: npm install && npm run build
     startCommand: npm run start
     envVars:
