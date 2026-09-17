@@ -15,8 +15,6 @@ export default function RiftTacticsPage() {
   const [playerId, setPlayerId] = useState<string>('');
   const [targetMode, setTargetMode] = useState<TargetSelectionMode>({ type: 'none' });
   const [spectatorTargetId, setSpectatorTargetId] = useState<string | undefined>(undefined);
-  const [isCameraLocked, setIsCameraLocked] = useState<boolean>(true);
-  const [centerCameraTrigger, setCenterCameraTrigger] = useState<number>(0);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isServerConnected, setIsServerConnected] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -389,10 +387,6 @@ export default function RiftTacticsPage() {
             onTileClick={handleTileClick}
             spectatorTargetId={spectatorTargetId}
             onSelectSpectatorTarget={(id) => setSpectatorTargetId(id)}
-            isCameraLocked={isCameraLocked}
-            onToggleCameraLock={() => setIsCameraLocked((prev) => !prev)}
-            onSetCameraLocked={(locked) => setIsCameraLocked(locked)}
-            centerCameraTrigger={centerCameraTrigger}
           />
           <CombatHUD
             room={room}
@@ -408,9 +402,6 @@ export default function RiftTacticsPage() {
             onPlayAgain={handlePlayAgain}
             spectatorTargetId={spectatorTargetId}
             onSelectSpectatorTarget={(id) => setSpectatorTargetId(id)}
-            isCameraLocked={isCameraLocked}
-            onToggleCameraLock={() => setIsCameraLocked((prev) => !prev)}
-            onCenterCamera={() => setCenterCameraTrigger((prev) => prev + 1)}
           />
         </div>
       )}

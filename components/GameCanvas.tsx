@@ -46,10 +46,6 @@ import {
   Shield,
   Flame,
   Camera as CameraIcon,
-  Lock,
-  Unlock,
-  Crosshair,
-  Focus,
   Eye,
 } from 'lucide-react';
 
@@ -57,7 +53,6 @@ export interface Camera {
   x: number; // Center world X position
   y: number; // Center world Y position
   zoom: number; // Default 1.0 (or scalable)
-  isLocked: boolean; // True: locked to client champion; False: free look
 }
 
 export interface TargetSelectionMode {
@@ -128,10 +123,6 @@ interface GameCanvasProps {
   onTileClick: (x: number, y: number, unitId?: string, unitType?: 'champion' | 'minion' | 'turret') => void;
   spectatorTargetId?: string;
   onSelectSpectatorTarget?: (targetId: string) => void;
-  isCameraLocked?: boolean;
-  onToggleCameraLock?: () => void;
-  onSetCameraLocked?: (locked: boolean) => void;
-  centerCameraTrigger?: number;
 }
 
 export function GameCanvas({
@@ -141,10 +132,6 @@ export function GameCanvas({
   onTileClick,
   spectatorTargetId,
   onSelectSpectatorTarget,
-  isCameraLocked: isCameraLockedProp,
-  onToggleCameraLock,
-  onSetCameraLocked,
-  centerCameraTrigger,
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
@@ -154,23 +141,13 @@ export function GameCanvas({
   const me = room.champions[currentPlayerId];
   const myTeam: Team = me ? me.team : (room.players.find((p) => p.id === currentPlayerId)?.team || 'blue');
 
-  // --- 1. DYNAMIC CAMERA SYSTEM (CENTERED PROJECTION) ---
-  const initialLock = isCameraLockedProp !== undefined ? isCameraLockedProp : true;
-  const [localLocked, setLocalLocked] = useState(initialLock);
-  const isLocked = isCameraLockedProp !== undefined ? isCameraLockedProp : localLocked;
-
+  // --- 1. PERMANENT FREE-CAM SYSTEM ---
   const cameraRef = useRef<Camera>({
     x: (MAP_WIDTH * TILE_SIZE) / 2,
     y: (MAP_HEIGHT * TILE_SIZE) / 2,
     zoom: 1.0,
-    isLocked,
   });
 
-  useEffect(() => {
-    cameraRef.current.isLocked = isLocked;
-  }, [isLocked]);
-
-  const isSpaceHeldRef = useRef(false);
   const isDraggingRef = useRef(false);
   const isMinimapDraggingRef = useRef(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -181,16 +158,6 @@ export function GameCanvas({
   // Turn alert banner state
   const prevActivePlayerRef = useRef<string | null | undefined>(null);
   const [turnBannerMessage, setTurnBannerMessage] = useState<string | null>(null);
-
-  // Center camera trigger prop from parent
-  useEffect(() => {
-    if (centerCameraTrigger !== undefined && centerCameraTrigger > 0) {
-      if (me && !me.isDead) {
-        cameraRef.current.x = me.x * TILE_SIZE + TILE_SIZE / 2;
-        cameraRef.current.y = me.y * TILE_SIZE + TILE_SIZE / 2;
-      }
-    }
-  }, [centerCameraTrigger, me, TILE_SIZE]);
 
   // Clamp camera position to prevent panning outside boundaries
   const clampCamera = useCallback((cx: number, cy: number) => {
@@ -206,105 +173,51 @@ export function GameCanvas({
     };
   }, [TILE_SIZE]);
 
-  // Center camera on specific tile (smooth target or snap)
-  const centerCameraOn = useCallback((tileX: number, tileY: number, snap = false) => {
-    const targetPxX = tileX * TILE_SIZE + TILE_SIZE / 2;
-    const targetPxY = tileY * TILE_SIZE + TILE_SIZE / 2;
-    const clamped = clampCamera(targetPxX, targetPxY);
-    if (snap) {
-      cameraRef.current.x = clamped.x;
-      cameraRef.current.y = clamped.y;
-    } else {
-      cameraRef.current.x += (clamped.x - cameraRef.current.x) * 0.4;
-      cameraRef.current.y += (clamped.y - cameraRef.current.y) * 0.4;
-    }
-  }, [clampCamera, TILE_SIZE]);
-
-  // Initial camera center on spawn
-  useEffect(() => {
-    if (me) {
-      centerCameraOn(me.x, me.y, true);
-    } else {
-      centerCameraOn(12, 6, true);
-    }
-  }, [centerCameraOn, me]);
-
-  // --- 2. ENFORCED TURN LOCK & TURN PROMPTS ---
+  // --- 2. TURN PROMPTS ---
   useEffect(() => {
     if (prevActivePlayerRef.current !== room.activePlayerId) {
       if (room.activePlayerId === currentPlayerId) {
-        cameraRef.current.isLocked = true;
         sounds.playSpell();
-
-        const timer = setTimeout(() => {
-          setLocalLocked(true);
-          if (onSetCameraLocked) onSetCameraLocked(true);
-          setTurnBannerMessage('Your Turn - Camera Locked');
-        }, 0);
+        setTurnBannerMessage('Your Turn');
 
         const hideTimer = setTimeout(() => {
           setTurnBannerMessage(null);
         }, 2600);
 
         return () => {
-          clearTimeout(timer);
           clearTimeout(hideTimer);
         };
       }
     }
     prevActivePlayerRef.current = room.activePlayerId;
-  }, [room.activePlayerId, currentPlayerId, onSetCameraLocked]);
+  }, [room.activePlayerId, currentPlayerId]);
 
-  // Toggle Camera Lock helper
-  const handleToggleLock = useCallback(() => {
-    const nextLocked = !isLocked;
-    cameraRef.current.isLocked = nextLocked;
-    setLocalLocked(nextLocked);
-    if (onToggleCameraLock) onToggleCameraLock();
-    if (onSetCameraLocked) onSetCameraLocked(nextLocked);
-    sounds.playClick();
-  }, [isLocked, onToggleCameraLock, onSetCameraLocked]);
-
-  // Recenter on Champion helper
-  const handleRecenterOnMe = useCallback(() => {
-    if (me && !me.isDead) {
-      centerCameraOn(me.x, me.y, false);
-    } else if (spectatorTargetId && room.champions[spectatorTargetId]) {
-      const spec = room.champions[spectatorTargetId];
-      centerCameraOn(spec.x, spec.y, false);
-    }
-    sounds.playClick();
-  }, [centerCameraOn, me, room.champions, spectatorTargetId]);
-
-  // Keyboard Shortcuts: Y (Toggle Lock) and Spacebar (Hold/Press to Center)
+  // Keyboard pan controls for permanent free-cam.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-      if (e.code === 'KeyY') {
-        e.preventDefault();
-        handleToggleLock();
-      } else if (e.code === 'Space') {
-        e.preventDefault();
-        isSpaceHeldRef.current = true;
-        handleRecenterOnMe();
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        isSpaceHeldRef.current = false;
-      }
+      const panBy: Record<string, { x: number; y: number }> = {
+        KeyW: { x: 0, y: -1 },
+        ArrowUp: { x: 0, y: -1 },
+        KeyS: { x: 0, y: 1 },
+        ArrowDown: { x: 0, y: 1 },
+        KeyA: { x: -1, y: 0 },
+        ArrowLeft: { x: -1, y: 0 },
+        KeyD: { x: 1, y: 0 },
+        ArrowRight: { x: 1, y: 0 },
+      };
+      const direction = panBy[e.code];
+      if (!direction) return;
+      e.preventDefault();
+      const cam = cameraRef.current;
+      const clamped = clampCamera(cam.x + direction.x * TILE_SIZE, cam.y + direction.y * TILE_SIZE);
+      cam.x = clamped.x;
+      cam.y = clamped.y;
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [handleToggleLock, handleRecenterOnMe]);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [clampCamera, TILE_SIZE]);
 
   // --- FLOATING DAMAGE NUMBERS & COMBAT OVERLAY ENGINE ---
   const floatingNumbersRef = useRef<AnimatedDamageNumber[]>([]);
@@ -777,26 +690,8 @@ export function GameCanvas({
       const now = Date.now();
       const cam = cameraRef.current;
 
-      // 1. Camera Update (Lock Lerp, Spacebar Center, or Edge Scrolling)
-      if (cam.isLocked || isSpaceHeldRef.current) {
-        // Locked to local champion or spectator target
-        let targetX = (MAP_WIDTH * TILE_SIZE) / 2;
-        let targetY = (MAP_HEIGHT * TILE_SIZE) / 2;
-
-        if (me && !me.isDead) {
-          targetX = me.x * TILE_SIZE + TILE_SIZE / 2;
-          targetY = me.y * TILE_SIZE + TILE_SIZE / 2;
-        } else if (spectatorTargetId && room.champions[spectatorTargetId]) {
-          const spec = room.champions[spectatorTargetId];
-          targetX = spec.x * TILE_SIZE + TILE_SIZE / 2;
-          targetY = spec.y * TILE_SIZE + TILE_SIZE / 2;
-        }
-
-        const clamped = clampCamera(targetX, targetY);
-        cam.x += (clamped.x - cam.x) * 0.12;
-        cam.y += (clamped.y - cam.y) * 0.12;
-      } else if (!isDraggingRef.current && mouseInCanvasRef.current) {
-        // Free look: edge scrolling within 24px of canvas border
+      // 1. Permanent free-cam edge scrolling.
+      if (!isDraggingRef.current && mouseInCanvasRef.current) {
         const { x: mx, y: my, width: cw, height: ch } = mousePosRef.current;
         const edgeDist = 24;
         const panSpeed = 9;
@@ -1690,12 +1585,6 @@ export function GameCanvas({
       isDraggingRef.current = true;
       dragStartRef.current = { x: e.clientX, y: e.clientY };
 
-      // Automatically unlock camera when dragging
-      if (cameraRef.current.isLocked) {
-        cameraRef.current.isLocked = false;
-        setLocalLocked(false);
-        if (onSetCameraLocked) onSetCameraLocked(false);
-      }
       return;
     }
 
@@ -1797,11 +1686,6 @@ export function GameCanvas({
     const targetWorldX = mx * (MAP_WIDTH * TILE_SIZE);
     const targetWorldY = my * (MAP_HEIGHT * TILE_SIZE);
 
-    // Clicking minimap sets camera.isLocked = false (Free Look)
-    cameraRef.current.isLocked = false;
-    setLocalLocked(false);
-    if (onSetCameraLocked) onSetCameraLocked(false);
-
     const clamped = clampCamera(targetWorldX, targetWorldY);
     cameraRef.current.x = clamped.x;
     cameraRef.current.y = clamped.y;
@@ -1835,15 +1719,14 @@ export function GameCanvas({
         className="w-full h-full cursor-crosshair block"
       />
 
-      {/* Turn Transition Prompt: "Your Turn - Camera Locked" */}
+      {/* Turn Transition Prompt */}
       {turnBannerMessage && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-none animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-[#09141d]/95 border-2 border-[#c8aa6e] shadow-[0_0_25px_rgba(200,170,110,0.65)] backdrop-blur-md">
-            <Focus className="w-5 h-5 text-[#facc15] animate-pulse" />
+            <CameraIcon className="w-5 h-5 text-[#facc15] animate-pulse" />
             <span className="text-sm font-black tracking-wider uppercase text-[#f0e6d2]">
               {turnBannerMessage}
             </span>
-            <Lock className="w-4 h-4 text-[#facc15]" />
           </div>
         </div>
       )}
@@ -1913,31 +1796,7 @@ export function GameCanvas({
             <span>MINIMAP</span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {/* Lock / Unlock Toggle Button */}
-            <button
-              onClick={handleToggleLock}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border transition-all cursor-pointer ${
-                isLocked
-                  ? 'bg-[#0ac8b9]/20 text-[#0ac8b9] border-[#0ac8b9]/60 hover:bg-[#0ac8b9]/30 shadow-[0_0_8px_rgba(10,200,185,0.4)]'
-                  : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700'
-              }`}
-              title="Toggle Camera Lock (Shortcut: Y)"
-            >
-              {isLocked ? <Lock className="w-3 h-3 text-[#0ac8b9]" /> : <Unlock className="w-3 h-3 text-zinc-400" />}
-              <span>{isLocked ? 'LOCKED [Y]' : 'FREE [Y]'}</span>
-            </button>
-
-            {/* Recenter Button */}
-            <button
-              onClick={handleRecenterOnMe}
-              className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-zinc-800/90 hover:bg-zinc-700 text-[#f0e6d2] border border-zinc-700 transition-all cursor-pointer"
-              title="Center Camera on Champion (Spacebar)"
-            >
-              <Crosshair className="w-3 h-3 text-[#c8aa6e]" />
-              <span>SPACE</span>
-            </button>
-          </div>
+          <span className="text-[10px] text-[#0ac8b9]">FREE-CAM</span>
         </div>
 
         {/* Minimap Canvas */}

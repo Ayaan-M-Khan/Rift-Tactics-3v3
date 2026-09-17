@@ -733,8 +733,8 @@ export class GameEngine {
     const isCannonWave = room.waveNumber % 3 === 0;
     const createWave = (team: Team): MinionUnit[] => {
       const isBlue = team === 'blue';
-      const baseX = isBlue ? 2 : 21;
-      const baseY = isBlue ? 10 : 3;
+      const baseX = isBlue ? BLUE_SPAWN_POINTS[0].x : RED_SPAWN_POINTS[0].x;
+      const baseY = isBlue ? BLUE_SPAWN_POINTS[0].y : RED_SPAWN_POINTS[0].y;
       const direction = isBlue ? 1 : -1;
       const idPrefix = `min_${team}_${room.waveNumber}_${Date.now()}`;
       const units: MinionUnit[] = [];
@@ -1647,7 +1647,9 @@ export class GameEngine {
       const enemyTeam: Team = minion.team === 'blue' ? 'red' : 'blue';
 
       // Look for enemy minions in range
-      const enemyMinion = room.minions.find((m) => m.team === enemyTeam && getDistance(minion.x, minion.y, m.x, m.y) <= minion.attackRange);
+      const enemyMinion = room.minions
+        .filter((m) => m.team === enemyTeam && getDistance(minion.x, minion.y, m.x, m.y) <= minion.attackRange)
+        .sort((a, b) => getDistance(minion.x, minion.y, a.x, a.y) - getDistance(minion.x, minion.y, b.x, b.y))[0];
       if (enemyMinion) {
         enemyMinion.currentHp -= minion.ad;
         this.addFloatingText(room, enemyMinion.x, enemyMinion.y, `-${minion.ad}`, '#f59e0b');
@@ -1677,6 +1679,10 @@ export class GameEngine {
       }, 0);
 
       const nextPt = path[Math.min(path.length - 1, closestIdx + 1)];
+      const centerClashDistance = getDistance(minion.x, minion.y, 12, 6);
+      if (centerClashDistance <= 1 && !enemyMinion) {
+        continue;
+      }
       if (nextPt && isTileWalkable(nextPt.x, nextPt.y)) {
         minion.x = nextPt.x;
         minion.y = nextPt.y;

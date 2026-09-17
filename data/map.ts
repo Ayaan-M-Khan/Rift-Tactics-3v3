@@ -10,15 +10,15 @@ export const BLUE_BASE_BOUNDS = { minX: 0, maxX: 2, minY: 9, maxY: 11 };
 export const RED_BASE_BOUNDS = { minX: 21, maxX: 23, minY: 2, maxY: 4 };
 
 export const BLUE_SPAWN_POINTS = [
-  { x: 1, y: 10 },
-  { x: 1, y: 9 },
-  { x: 1, y: 11 },
+  { x: 5, y: 9 },
+  { x: 5, y: 8 },
+  { x: 5, y: 10 },
 ];
 
 export const RED_SPAWN_POINTS = [
-  { x: 22, y: 3 },
-  { x: 22, y: 2 },
-  { x: 22, y: 4 },
+  { x: 18, y: 4 },
+  { x: 18, y: 3 },
+  { x: 18, y: 5 },
 ];
 
 export const BRAZIERS = [
@@ -199,11 +199,11 @@ export function getLineTiles(x0: number, y0: number, x1: number, y1: number): { 
 
 // Center lane waypoint coordinates for minion marching
 export const BLUE_MINION_PATH = [
-  { x: 3, y: 10 },
   { x: 5, y: 9 },
   { x: 7, y: 8 },
   { x: 9, y: 7 },
   { x: 11, y: 6 },
+  { x: 12, y: 6 },
   { x: 13, y: 5 },
   { x: 15, y: 5 },
   { x: 17, y: 4 },
@@ -211,10 +211,10 @@ export const BLUE_MINION_PATH = [
 ];
 
 export const RED_MINION_PATH = [
-  { x: 20, y: 3 },
   { x: 18, y: 4 },
   { x: 15, y: 5 },
   { x: 13, y: 5 },
+  { x: 12, y: 6 },
   { x: 11, y: 6 },
   { x: 9, y: 7 },
   { x: 7, y: 8 },
