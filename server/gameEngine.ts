@@ -86,6 +86,7 @@ export class GameEngine {
       fillBots: true, // defaults to true for immediate testing/playability!
       players: [hostPlayer],
       currentRound: 1,
+      waveNumber: 0,
       blueScore: 0,
       redScore: 0,
       turnQueue: [],
@@ -542,6 +543,7 @@ export class GameEngine {
 
     room.phase = 'playing';
     room.currentRound = 1;
+    room.waveNumber = 0;
     room.blueScore = 0;
     room.redScore = 0;
     room.turrets = this.createInitialTurrets();
@@ -693,9 +695,10 @@ export class GameEngine {
     // Reset turrets for round
     room.turrets = this.createInitialTurrets();
 
-    // Spawn minion wave on rounds 1, 3, etc. (every 2 rounds)
+    // Spawn minion waves every two rounds.
     room.minions = [];
     if (room.currentRound % 2 === 1) {
+      room.waveNumber++;
       this.spawnMinionWave(room);
     }
 
@@ -727,87 +730,57 @@ export class GameEngine {
   }
 
   private spawnMinionWave(room: GameRoomState) {
-    // 3 minions per team: 2 melee, 1 caster
-    const blueWave: MinionUnit[] = [
-      {
-        id: 'min_b_m1_' + Date.now(),
-        team: 'blue',
-        type: 'melee',
-        x: 2,
-        y: 10,
-        currentHp: 220,
-        maxHp: 220,
-        ad: 24,
-        attackRange: 1,
-        hasAttacked: false,
-      },
-      {
-        id: 'min_b_m2_' + Date.now(),
-        team: 'blue',
-        type: 'melee',
-        x: 3,
-        y: 10,
-        currentHp: 220,
-        maxHp: 220,
-        ad: 24,
-        attackRange: 1,
-        hasAttacked: false,
-      },
-      {
-        id: 'min_b_c1_' + Date.now(),
-        team: 'blue',
-        type: 'caster',
-        x: 2,
-        y: 9,
-        currentHp: 160,
-        maxHp: 160,
-        ad: 32,
-        attackRange: 3,
-        hasAttacked: false,
-      },
-    ];
+    const isCannonWave = room.waveNumber % 3 === 0;
+    const createWave = (team: Team): MinionUnit[] => {
+      const isBlue = team === 'blue';
+      const baseX = isBlue ? 2 : 21;
+      const baseY = isBlue ? 10 : 3;
+      const direction = isBlue ? 1 : -1;
+      const idPrefix = `min_${team}_${room.waveNumber}_${Date.now()}`;
+      const units: MinionUnit[] = [];
 
-    const redWave: MinionUnit[] = [
-      {
-        id: 'min_r_m1_' + Date.now(),
-        team: 'red',
-        type: 'melee',
-        x: 21,
-        y: 3,
-        currentHp: 220,
-        maxHp: 220,
-        ad: 24,
-        attackRange: 1,
-        hasAttacked: false,
-      },
-      {
-        id: 'min_r_m2_' + Date.now(),
-        team: 'red',
-        type: 'melee',
-        x: 20,
-        y: 3,
-        currentHp: 220,
-        maxHp: 220,
-        ad: 24,
-        attackRange: 1,
-        hasAttacked: false,
-      },
-      {
-        id: 'min_r_c1_' + Date.now(),
-        team: 'red',
-        type: 'caster',
-        x: 21,
-        y: 4,
-        currentHp: 160,
-        maxHp: 160,
-        ad: 32,
-        attackRange: 3,
-        hasAttacked: false,
-      },
-    ];
+      const addMinion = (
+        type: MinionUnit['type'],
+        index: number,
+        xOffset: number,
+        yOffset: number,
+        currentHp: number,
+        ad: number,
+        attackRange: number,
+        goldBounty: number
+      ) => {
+        units.push({
+          id: `${idPrefix}_${type}_${index}`,
+          team,
+          type,
+          x: baseX + direction * xOffset,
+          y: baseY + yOffset,
+          currentHp,
+          maxHp: currentHp,
+          ad,
+          attackRange,
+          goldBounty,
+          hasAttacked: false,
+        });
+      };
 
-    room.minions.push(...blueWave, ...redWave);
-    room.combatLogs.push('A wave of minions has spawned in Mid Lane!');
+      addMinion('melee', 1, 0, 0, 477, 12, 1, 21);
+      addMinion('melee', 2, 1, 0, 477, 12, 1, 21);
+      addMinion('melee', 3, 2, 0, 477, 12, 1, 21);
+      if (isCannonWave) {
+        const cannonBounty = 60 + Math.floor((room.waveNumber - 3) / 3) * 3;
+        addMinion('cannon', 1, 1, 1, 912, 41, 3, cannonBounty);
+      }
+      addMinion('caster', 1, 0, -1, 296, 24, 3, 14);
+      addMinion('caster', 2, 1, -1, 296, 24, 3, 14);
+      addMinion('caster', 3, 2, -1, 296, 24, 3, 14);
+      return units;
+    };
+
+    room.minions.push(...createWave('blue'), ...createWave('red'));
+    room.combatLogs.push(
+      `Wave ${room.waveNumber} spawned: ${isCannonWave ? '3 melee, 1 cannon, 3 caster' : '3 melee, 3 caster'} per team.`
+    );
   }
 
   private recalculateChampionStats(champ: ChampionState) {
@@ -1480,10 +1453,11 @@ export class GameEngine {
         const idx = room.minions.indexOf(minion);
         if (idx !== -1) room.minions.splice(idx, 1);
 
-        const bounty = minion.type === 'melee' ? 30 : 20;
+        const bounty = minion.goldBounty;
         attacker.gold += bounty;
         attacker.minionKills++;
         this.addFloatingText(room, attacker.x, attacker.y, `+${bounty}g`, '#facc15');
+        this.logCombatEvent(room, `${attacker.playerName} last-hit a ${minion.type} minion (+${bounty}g).`, 'kill');
       }
     } else if (targetType === 'turret') {
       const turret = room.turrets[attacker.team === 'blue' ? 'red' : 'blue'];

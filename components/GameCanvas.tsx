@@ -1190,26 +1190,96 @@ export function GameCanvas({
 
         if (px + TILE_SIZE < viewLeft || px > viewRight || py + TILE_SIZE < viewTop || py > viewBottom) return;
 
-        ctx.fillStyle = minion.team === 'blue' ? '#0284c7' : '#e11d48';
-        ctx.beginPath();
-        ctx.arc(px + TILE_SIZE / 2, py + TILE_SIZE / 2, 14, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#f0e6d2';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+        const centerX = px + TILE_SIZE / 2;
+        const centerY = py + TILE_SIZE / 2;
+        const isBlue = minion.team === 'blue';
+        const cloth = isBlue ? '#1e40af' : '#991b1b';
+        const clothHighlight = isBlue ? '#3b82f6' : '#ef4444';
+        const magic = isBlue ? '#06b6d4' : '#f97316';
+        const scale = minion.type === 'cannon' ? 1.4 : 1;
 
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '11px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(minion.type === 'melee' ? '🛡️' : '🪄', px + TILE_SIZE / 2, py + TILE_SIZE / 2);
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.scale(scale, scale);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#d1d5db';
+        ctx.fillStyle = cloth;
+
+        if (minion.type === 'cannon') {
+          ctx.fillStyle = '#374151';
+          ctx.fillRect(-18, 2, 36, 13);
+          ctx.beginPath();
+          ctx.arc(-13, 16, 6, 0, Math.PI * 2);
+          ctx.arc(13, 16, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = clothHighlight;
+          ctx.fillRect(-10, -11, 20, 12);
+          ctx.fillStyle = '#111827';
+          ctx.fillRect(4, -7, 24, 7);
+          ctx.stroke();
+          ctx.fillStyle = magic;
+          ctx.fillRect(-2, -9, 4, 4);
+        } else if (minion.type === 'melee') {
+          ctx.beginPath();
+          ctx.arc(0, 3, 12, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#9ca3af';
+          ctx.beginPath();
+          ctx.arc(0, -6, 8, Math.PI, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#6b7280';
+          ctx.beginPath();
+          ctx.arc(-11, 5, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.strokeStyle = '#d1d5db';
+          ctx.beginPath();
+          ctx.moveTo(8, 0);
+          ctx.lineTo(17, -9);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(-11, -8);
+          ctx.lineTo(11, -8);
+          ctx.lineTo(8, 14);
+          ctx.lineTo(-8, 14);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#111827';
+          ctx.beginPath();
+          ctx.arc(0, -5, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = magic;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = magic;
+          ctx.beginPath();
+          ctx.arc(0, -17, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = '#92400e';
+          ctx.beginPath();
+          ctx.moveTo(10, -3);
+          ctx.lineTo(14, 14);
+          ctx.stroke();
+        }
+        ctx.restore();
 
         // HP bar
         const hpPct = Math.max(0, minion.currentHp / minion.maxHp);
         ctx.fillStyle = '#050c12';
         ctx.fillRect(px + 8, py + 2, TILE_SIZE - 16, 4);
-        ctx.fillStyle = minion.team === 'blue' ? '#38bdf8' : '#fb7185';
+        const canLastHit = me && minion.team !== me.team && minion.currentHp <= me.effectiveAd;
+        ctx.fillStyle = canLastHit ? '#fde68a' : isBlue ? '#38bdf8' : '#fb7185';
+        if (canLastHit) {
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = '#facc15';
+        }
         ctx.fillRect(px + 8, py + 2, (TILE_SIZE - 16) * hpPct, 4);
+        ctx.shadowBlur = 0;
       });
 
       // --- CHAMPIONS ---

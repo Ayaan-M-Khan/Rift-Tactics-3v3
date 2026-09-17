@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { sounds } from '../lib/soundEngine';
-import { Volume2, VolumeX, Shield, Swords, Sparkles, Users } from 'lucide-react';
+import { Volume2, VolumeX, Shield, Swords, Sparkles, Users, Server } from 'lucide-react';
 
 interface TitleScreenProps {
   isServerConnected?: boolean;
   onCreateRoom: (hostName: string) => void;
   onJoinRoom: (roomCode: string, playerName: string) => void;
   onQuickSolo: (hostName: string) => void;
+  onSaveSocketUrl?: (url: string) => void;
 }
 
 export function TitleScreen({
@@ -16,12 +17,21 @@ export function TitleScreen({
   onCreateRoom,
   onJoinRoom,
   onQuickSolo,
+  onSaveSocketUrl,
 }: TitleScreenProps) {
   const [playerName, setPlayerName] = useState('Summoner');
   const [roomCode, setRoomCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [socketUrl, setSocketUrl] = useState('');
+  const [showServerSettings, setShowServerSettings] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setSocketUrl(window.localStorage.getItem('custom_socket_url') || '');
+    }
+  }, []);
 
   useEffect(() => {
     // Ambient grassy particles / mystic runes canvas background
@@ -143,6 +153,17 @@ export function TitleScreen({
     onQuickSolo(playerName.trim() || 'Summoner');
   };
 
+  const handleSaveSocketUrl = () => {
+    const normalizedUrl = socketUrl.trim().replace(/\/+$/, '');
+    if (typeof window !== 'undefined') {
+      if (normalizedUrl) window.localStorage.setItem('custom_socket_url', normalizedUrl);
+      else window.localStorage.removeItem('custom_socket_url');
+    }
+    onSaveSocketUrl?.(normalizedUrl);
+    setShowServerSettings(false);
+    sounds.playClick();
+  };
+
   return (
     <div id="title-screen-container" className="relative w-full h-[100dvh] flex flex-col items-center justify-center overflow-hidden select-none animate-fade-in">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
@@ -157,7 +178,35 @@ export function TitleScreen({
         >
           {isMuted ? <VolumeX className="w-5 h-5 text-rose-400" /> : <Volume2 className="w-5 h-5 text-[#0ac8b9]" />}
         </button>
+        <button
+          onClick={() => setShowServerSettings((visible) => !visible)}
+          className="p-2.5 rounded-full border border-[#c8aa6e]/40 bg-[#09141d]/80 text-[#c8aa6e] hover:bg-[#0ac8b9]/20 hover:border-[#0ac8b9] transition-all cursor-pointer shadow-lg"
+          title="Server Settings"
+        >
+          <Server className="w-5 h-5 text-[#0ac8b9]" />
+        </button>
       </div>
+
+      {showServerSettings && (
+        <div className="absolute top-16 right-6 z-30 w-80 rounded-lg border border-[#c8aa6e]/50 bg-[#09141d]/95 p-4 shadow-xl backdrop-blur-md">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[#c8aa6e] mb-1.5">
+            Multiplayer Backend URL
+          </label>
+          <input
+            value={socketUrl}
+            onChange={(e) => setSocketUrl(e.target.value)}
+            placeholder="https://your-server.onrender.com"
+            className="w-full px-3 py-2 bg-[#050c12] border border-[#785a28] rounded-md text-[#f0e6d2] text-xs focus:outline-none focus:border-[#0ac8b9]"
+          />
+          <p className="mt-2 text-[10px] text-zinc-400">Leave blank to use this site&apos;s server.</p>
+          <button
+            onClick={handleSaveSocketUrl}
+            className="mt-3 w-full rounded-md bg-[#0ac8b9] px-3 py-2 text-xs font-bold uppercase text-[#050c12] hover:brightness-110"
+          >
+            Save and reconnect
+          </button>
+        </div>
+      )}
 
       {/* Main Title Container */}
       <div

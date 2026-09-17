@@ -155,13 +155,14 @@ export interface ChampionState {
 export interface MinionUnit {
   id: string;
   team: Team;
-  type: 'melee' | 'caster';
+  type: 'melee' | 'caster' | 'cannon';
   x: number;
   y: number;
   currentHp: number;
   maxHp: number;
   ad: number;
   attackRange: number;
+  goldBounty: number;
   hasAttacked: boolean;
 }
 
@@ -244,6 +245,7 @@ export interface GameRoomState {
   
   // Match format: Best of 3
   currentRound: number; // 1, 2, 3
+  waveNumber: number;
   blueScore: number;
   redScore: number;
   roundWinner?: Team;
