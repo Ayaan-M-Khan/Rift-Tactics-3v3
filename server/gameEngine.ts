@@ -991,7 +991,7 @@ export class GameEngine {
     const reducedDamage = Math.max(10, Math.round(damage * (100 / (100 + targetArmor))));
 
     // Apply Damage
-    this.applyDamageToTarget(room, champ, targetType, targetId, reducedDamage, 'physical');
+    this.applyDamageToTarget(room, champ, targetType, targetId, reducedDamage, 'physical', isCrit);
 
     // Lifesteal
     if (champ.items.includes('bloodthirster') || champ.items.includes('dorans_blade')) {
@@ -1322,10 +1322,11 @@ export class GameEngine {
     targetType: 'champion' | 'minion' | 'turret',
     targetId: string,
     damage: number,
-    damageType: 'physical' | 'magic' | 'true'
+    damageType: 'physical' | 'magic' | 'true',
+    isCrit: boolean = false
   ) {
     attacker.damageDealt += damage;
-    const color = damageType === 'true' ? '#ffffff' : damageType === 'magic' ? '#a855f7' : '#ef4444';
+    const color = isCrit ? '#fbbf24' : damageType === 'true' ? '#ffffff' : damageType === 'magic' ? '#a855f7' : '#ef4444';
 
     if (targetType === 'champion') {
       const victim = room.champions[targetId];
@@ -1351,7 +1352,7 @@ export class GameEngine {
 
       if (remainingDmg > 0) {
         victim.currentHp -= remainingDmg;
-        this.addFloatingText(room, victim.x, victim.y, `-${remainingDmg}`, color);
+        this.addFloatingText(room, victim.x, victim.y, isCrit ? `-${remainingDmg} CRIT!` : `-${remainingDmg}`, color);
       }
 
       // Check elimination

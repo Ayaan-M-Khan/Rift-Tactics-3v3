@@ -16,21 +16,22 @@ export default function RiftTacticsPage() {
   const [playerId, setPlayerId] = useState<string>('');
   const [targetMode, setTargetMode] = useState<TargetSelectionMode>({ type: 'none' });
   const [spectatorTargetId, setSpectatorTargetId] = useState<string | undefined>(undefined);
+  const [isCameraLocked, setIsCameraLocked] = useState<boolean>(true);
+  const [centerCameraTrigger, setCenterCameraTrigger] = useState<number>(0);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isServerConnected, setIsServerConnected] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = loadSession();
-      return !!(saved && saved.sessionToken);
-    }
-    return false;
-  });
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const localEngineRef = useRef<GameEngine | null>(null);
 
   // Initialize socket and attempt session restore
   useEffect(() => {
     const socket = getSocket();
+
+    const savedSession = loadSession();
+    if (savedSession && savedSession.sessionToken) {
+      setTimeout(() => setIsLoading(true), 0);
+    }
 
     const handleRoomUpdated = (updatedRoom: GameRoomState) => {
       setRoom(updatedRoom);
@@ -44,6 +45,7 @@ export default function RiftTacticsPage() {
       // Automatically emit reconnect_session using stored sessionToken and roomCode to restore game state
       const saved = loadSession();
       if (saved && saved.sessionToken) {
+        setIsLoading(true);
         socket.emit(
           'reconnect_session',
           { sessionToken: saved.sessionToken, roomCode: saved.roomCode },
@@ -457,6 +459,10 @@ export default function RiftTacticsPage() {
             onTileClick={handleTileClick}
             spectatorTargetId={spectatorTargetId}
             onSelectSpectatorTarget={(id) => setSpectatorTargetId(id)}
+            isCameraLocked={isCameraLocked}
+            onToggleCameraLock={() => setIsCameraLocked((prev) => !prev)}
+            onSetCameraLocked={(locked) => setIsCameraLocked(locked)}
+            centerCameraTrigger={centerCameraTrigger}
           />
           <CombatHUD
             room={room}
@@ -470,6 +476,9 @@ export default function RiftTacticsPage() {
             onPlayAgain={handlePlayAgain}
             spectatorTargetId={spectatorTargetId}
             onSelectSpectatorTarget={(id) => setSpectatorTargetId(id)}
+            isCameraLocked={isCameraLocked}
+            onToggleCameraLock={() => setIsCameraLocked((prev) => !prev)}
+            onCenterCamera={() => setCenterCameraTrigger((prev) => prev + 1)}
           />
         </div>
       )}

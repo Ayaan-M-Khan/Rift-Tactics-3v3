@@ -20,6 +20,10 @@ import {
   X,
   Volume2,
   VolumeX,
+  Camera as CameraIcon,
+  Lock,
+  Unlock,
+  Crosshair,
 } from 'lucide-react';
 
 interface CombatHUDProps {
@@ -34,6 +38,9 @@ interface CombatHUDProps {
   onPlayAgain: () => void;
   spectatorTargetId?: string;
   onSelectSpectatorTarget: (targetId: string) => void;
+  isCameraLocked?: boolean;
+  onToggleCameraLock?: () => void;
+  onCenterCamera?: () => void;
 }
 
 export function CombatHUD({
@@ -48,6 +55,9 @@ export function CombatHUD({
   onPlayAgain,
   spectatorTargetId,
   onSelectSpectatorTarget,
+  isCameraLocked = true,
+  onToggleCameraLock,
+  onCenterCamera,
 }: CombatHUDProps) {
   const [showShop, setShowShop] = useState(false);
   const [showCombatLog, setShowCombatLog] = useState(false);
@@ -219,8 +229,43 @@ export function CombatHUD({
           </div>
         </div>
 
-        {/* Action Tray: Log, Mute */}
+        {/* Action Tray: Camera, Log, Mute */}
         <div className="flex items-center gap-2">
+          {/* Camera Lock / Unlock Toggle Button */}
+          <button
+            id="btn-hud-camera-lock"
+            onClick={() => {
+              sounds.playClick();
+              onToggleCameraLock?.();
+            }}
+            className={`p-2 rounded-lg border transition-all cursor-pointer shadow flex items-center gap-1.5 ${
+              isCameraLocked
+                ? 'bg-[#09141d]/90 border-[#c8aa6e] text-[#c8aa6e] shadow-[0_0_10px_rgba(200,170,110,0.5)]'
+                : 'bg-[#09141d]/90 border-zinc-700 text-zinc-400 hover:border-zinc-500'
+            }`}
+            title={`Camera: ${isCameraLocked ? 'LOCKED [Y]' : 'FREE LOOK [Y]'}\nClick or press 'Y' to toggle • Spacebar to center`}
+          >
+            <CameraIcon className="w-5 h-5 text-[#c8aa6e]" />
+            {isCameraLocked ? (
+              <Lock className="w-3.5 h-3.5 text-[#facc15]" />
+            ) : (
+              <Unlock className="w-3.5 h-3.5 text-zinc-400" />
+            )}
+          </button>
+
+          {/* Quick Center on Champion Button */}
+          <button
+            id="btn-hud-recenter-camera"
+            onClick={() => {
+              sounds.playClick();
+              onCenterCamera?.();
+            }}
+            className="p-2 rounded-lg bg-[#09141d]/90 border border-[#c8aa6e]/40 text-[#c8aa6e] hover:border-[#0ac8b9] transition-all cursor-pointer shadow"
+            title="Recenter Camera on Champion (Spacebar)"
+          >
+            <Crosshair className="w-5 h-5" />
+          </button>
+
           <button
             id="btn-toggle-combat-log"
             onClick={() => {
@@ -526,6 +571,23 @@ export function CombatHUD({
               );
             })}
           </div>
+
+          {/* Camera Lock Button */}
+          <button
+            id="btn-action-camera-lock"
+            onClick={() => {
+              sounds.playClick();
+              onToggleCameraLock?.();
+            }}
+            className={`p-2.5 rounded-lg border transition-all cursor-pointer ${
+              isCameraLocked
+                ? 'bg-[#050c12] border-[#c8aa6e] text-[#facc15] shadow-[0_0_8px_rgba(200,170,110,0.4)]'
+                : 'bg-[#050c12] border-zinc-800 text-zinc-500 hover:text-zinc-300'
+            }`}
+            title={`Camera: ${isCameraLocked ? 'LOCKED [Y]' : 'FREE LOOK [Y]'}\nPress Y to toggle • Spacebar to center`}
+          >
+            {isCameraLocked ? <Lock className="w-5 h-5 text-[#facc15]" /> : <Unlock className="w-5 h-5 text-zinc-500" />}
+          </button>
 
           {/* Shop Button */}
           <button
