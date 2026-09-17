@@ -43,7 +43,7 @@ export default function RiftTacticsPage() {
         setIsServerConnected(false);
         setConnectionError('Multiplayer server unreachable — playing in local Offline Practice Mode.');
       }
-    }, 3500);
+    }, 6000);
 
     const handleConnect = () => {
       clearTimeout(connectionTimeout);
@@ -201,6 +201,10 @@ export default function RiftTacticsPage() {
         }, 150);
       }
     });
+  };
+
+  const handleSaveSocketUrl = () => {
+    window.location.reload();
   };
 
   // Lobby actions
@@ -461,6 +465,7 @@ export default function RiftTacticsPage() {
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}
           onQuickSolo={handleQuickSolo}
+          onSaveSocketUrl={handleSaveSocketUrl}
         />
       ) : room.phase === 'lobby' ? (
         <LobbyScreen

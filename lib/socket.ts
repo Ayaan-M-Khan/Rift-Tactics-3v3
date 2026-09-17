@@ -4,7 +4,12 @@ let socketInstance: Socket | null = null;
 
 export const getSocket = (): Socket => {
   if (!socketInstance) {
+    let customSocketUrl: string | null = null;
+    if (typeof window !== 'undefined') {
+      customSocketUrl = window.localStorage.getItem('custom_socket_url');
+    }
     const socketUrl =
+      customSocketUrl ||
       process.env.NEXT_PUBLIC_SOCKET_URL ||
       (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
 
@@ -95,4 +100,3 @@ export function clearGameSession() {
 }
 
 export const clearSession = clearGameSession;
-
