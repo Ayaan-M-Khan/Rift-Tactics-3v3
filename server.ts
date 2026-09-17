@@ -176,6 +176,18 @@ async function bootstrap() {
       if (typeof callback === 'function') callback(result);
     });
 
+    // 16b. Sell Item
+    socket.on('sell_item', ({ roomCode, playerId, itemIndex }, callback) => {
+      const result = gameEngine.sellItem(roomCode, playerId, itemIndex);
+      if (typeof callback === 'function') callback(result);
+    });
+
+    // 16c. Undo Buy Item
+    socket.on('undo_buy_item', ({ roomCode, playerId }, callback) => {
+      const result = gameEngine.undoBuyItem(roomCode, playerId);
+      if (typeof callback === 'function') callback(result);
+    });
+
     // 17. Use Item
     socket.on('use_item', ({ roomCode, playerId, itemId }, callback) => {
       const result = gameEngine.useItem(roomCode, playerId, itemId);

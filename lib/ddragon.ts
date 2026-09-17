@@ -185,3 +185,16 @@ export function getChampionById(id: string): DraftChampion | undefined {
 export function getActivePatch(): string {
   return activePatch;
 }
+
+export function getChampionPortraitUrl(champId: string): string {
+  if (!champId) return '';
+  const dChamp = getChampionById(champId);
+  if (dChamp?.squareIcon) return dChamp.squareIcon;
+  const formatted = champId.charAt(0).toUpperCase() + champId.slice(1);
+  return `${DDRAGON_BASE}/cdn/${activePatch}/img/champion/${formatted}.png`;
+}
+
+export function getItemIconUrl(itemId?: string): string {
+  if (!itemId) return '';
+  return `${DDRAGON_BASE}/cdn/${activePatch}/img/item/${itemId}.png`;
+}

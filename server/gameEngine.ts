@@ -1271,6 +1271,10 @@ export class GameEngine {
       return { success: false, error: 'Must be in your Base/Shop zone to buy items!' };
     }
 
+    if (champ.items.length >= 6) {
+      return { success: false, error: 'Inventory is full (6/6 slots)' };
+    }
+
     const item = SHOP_ITEMS[itemId];
     if (!item) return { success: false, error: 'Item not found' };
 
@@ -1280,10 +1284,84 @@ export class GameEngine {
 
     champ.gold -= item.cost;
     champ.items.push(itemId);
+    champ.lastPurchasedItemId = itemId;
     this.recalculateChampionStats(champ);
 
     this.addFloatingText(room, champ.x, champ.y, `+${item.name}`, '#f59e0b');
-    room.combatLogs.push(`${champ.playerName} purchased ${item.name}!`);
+    this.logCombatEvent(room, `${champ.playerName} purchased ${item.name}!`, 'item');
+
+    this.emitUpdate(room);
+    return { success: true };
+  }
+
+  public sellItem(roomCode: string, playerId: string, itemIndex: number): { success: boolean; error?: string } {
+    const room = this.rooms.get(roomCode);
+    if (!room || room.phase !== 'playing' || room.activePlayerId !== playerId) {
+      return { success: false, error: 'Not your turn' };
+    }
+
+    const champ = room.champions[playerId];
+    if (!champ || champ.isDead) return { success: false, error: 'Champion unavailable' };
+
+    if (!isInBaseShopZone(champ.x, champ.y, champ.team)) {
+      return { success: false, error: 'Must be in your Base/Shop zone to sell items!' };
+    }
+
+    if (itemIndex < 0 || itemIndex >= champ.items.length) {
+      return { success: false, error: 'Invalid inventory slot' };
+    }
+
+    const itemId = champ.items[itemIndex];
+    const item = SHOP_ITEMS[itemId];
+    if (!item) return { success: false, error: 'Item not found' };
+
+    const refundGold = Math.floor(item.cost * 0.7); // Authentic League 70% sell value
+    champ.items.splice(itemIndex, 1);
+    champ.gold += refundGold;
+    champ.lastPurchasedItemId = undefined;
+    this.recalculateChampionStats(champ);
+
+    this.addFloatingText(room, champ.x, champ.y, `+${refundGold}g (Sold)`, '#f59e0b');
+    this.logCombatEvent(room, `${champ.playerName} sold ${item.name} for ${refundGold}g.`, 'item');
+
+    this.emitUpdate(room);
+    return { success: true };
+  }
+
+  public undoBuyItem(roomCode: string, playerId: string): { success: boolean; error?: string } {
+    const room = this.rooms.get(roomCode);
+    if (!room || room.phase !== 'playing' || room.activePlayerId !== playerId) {
+      return { success: false, error: 'Not your turn' };
+    }
+
+    const champ = room.champions[playerId];
+    if (!champ || champ.isDead) return { success: false, error: 'Champion unavailable' };
+
+    if (!isInBaseShopZone(champ.x, champ.y, champ.team)) {
+      return { success: false, error: 'Must be in your Base/Shop zone to undo purchase!' };
+    }
+
+    if (!champ.lastPurchasedItemId) {
+      return { success: false, error: 'No recent purchase to undo' };
+    }
+
+    const lastIdx = champ.items.lastIndexOf(champ.lastPurchasedItemId);
+    if (lastIdx === -1) {
+      champ.lastPurchasedItemId = undefined;
+      return { success: false, error: 'Purchased item not in inventory' };
+    }
+
+    const item = SHOP_ITEMS[champ.lastPurchasedItemId];
+    if (!item) return { success: false, error: 'Item not found' };
+
+    champ.items.splice(lastIdx, 1);
+    champ.gold += item.cost;
+    const undoneName = item.name;
+    champ.lastPurchasedItemId = undefined;
+    this.recalculateChampionStats(champ);
+
+    this.addFloatingText(room, champ.x, champ.y, `+${item.cost}g (Undo)`, '#f59e0b');
+    this.logCombatEvent(room, `${champ.playerName} undid purchase of ${undoneName}.`, 'item');
 
     this.emitUpdate(room);
     return { success: true };
@@ -1305,11 +1383,15 @@ export class GameEngine {
       champ.items.splice(itemIdx, 1);
       champ.currentHp = Math.min(champ.maxHp, champ.currentHp + 110);
       this.addFloatingText(room, champ.x, champ.y, '+110 HP', '#22c55e');
-      room.combatLogs.push(`${champ.playerName} drank a Health Potion!`);
+      this.logCombatEvent(room, `${champ.playerName} drank a Health Potion!`, 'item');
+    } else if (itemId === 'refillable_potion') {
+      champ.currentHp = Math.min(champ.maxHp, champ.currentHp + 125);
+      this.addFloatingText(room, champ.x, champ.y, '+125 HP', '#22c55e');
+      this.logCombatEvent(room, `${champ.playerName} used Refillable Potion!`, 'item');
     } else if (itemId === 'zhonyas_hourglass') {
       champ.statusEffects.push({ type: 'zhonya', durationTurns: 1 });
       this.addFloatingText(room, champ.x, champ.y, 'GOLDEN STASIS', '#facc15');
-      room.combatLogs.push(`${champ.playerName} entered Zhonya's Golden Stasis!`);
+      this.logCombatEvent(room, `${champ.playerName} entered Zhonya's Golden Stasis!`, 'item');
     }
 
     this.emitUpdate(room);
@@ -1442,6 +1524,26 @@ export class GameEngine {
     }
   }
 
+  public logCombatEvent(
+    room: GameRoomState,
+    text: string,
+    type: 'kill' | 'spell' | 'attack' | 'item' | 'system' = 'system'
+  ) {
+    room.combatLogs.push(text);
+    if (!room.combatLogEntries) room.combatLogEntries = [];
+    room.combatLogEntries.push({
+      id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      text,
+      turnNumber: room.totalTurnsElapsed ?? 0,
+      timestamp: Date.now(),
+      type,
+    });
+    // Keep last 50 entries
+    if (room.combatLogEntries.length > 50) {
+      room.combatLogEntries = room.combatLogEntries.slice(-50);
+    }
+  }
+
   // --- Turn Progression & Round Conclusion ---
 
   public passTurn(roomCode: string, playerId: string): boolean {
@@ -1465,6 +1567,8 @@ export class GameEngine {
         champ.currentMana = Math.min(champ.maxMana, champ.currentMana + 100);
       }
     }
+
+    room.totalTurnsElapsed = (room.totalTurnsElapsed ?? 0) + 1;
 
     // Advance turn queue
     let attempts = 0;
@@ -1492,7 +1596,7 @@ export class GameEngine {
     }
 
     room.turnTimeRemainingSeconds = 45;
-    room.combatLogs.push(`Turn passed to ${nextChamp?.playerName || 'Player'}.`);
+    this.logCombatEvent(room, `Turn passed to ${nextChamp?.playerName || 'Player'}.`, 'system');
 
     this.startTurnTimer(roomCode);
     this.emitUpdate(room);

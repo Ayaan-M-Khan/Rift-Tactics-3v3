@@ -49,6 +49,7 @@ export interface AbilityData {
   healAmount?: number;
   shieldAmount?: number;
   statusEffect?: 'stun' | 'root' | 'silence' | 'slow' | 'knockback' | 'airborne';
+  icon?: string;
 }
 
 export interface ChampionData {
@@ -79,8 +80,12 @@ export interface ItemData {
   id: string;
   name: string;
   icon?: string;
+  ddragonId?: string;
   cost: number;
   description: string;
+  passiveName?: string;
+  activeName?: string;
+  activeCooldown?: number;
   ad?: number;
   ap?: number;
   hp?: number;
@@ -90,9 +95,7 @@ export interface ItemData {
   moveBonus?: number;
   critRate?: number; // e.g. 0.25
   lifesteal?: number; // e.g. 0.15
-  category: 'starter' | 'ad' | 'ap' | 'tank' | 'boots' | 'consumable';
-  activeName?: string;
-  activeCooldown?: number;
+  category: 'starter' | 'ad' | 'ap' | 'tank' | 'mr' | 'boots' | 'consumable';
 }
 
 export interface ActiveStatusEffect {
@@ -119,7 +122,8 @@ export interface ChampionState {
   isBot: boolean;
   
   gold: number;
-  items: string[]; // item IDs
+  items: string[]; // item IDs (up to 6 slots)
+  lastPurchasedItemId?: string;
   summonerSpell: SummonerSpellId;
   spellCooldownRounds: number; // cooldown remaining (in rounds)
   
@@ -221,6 +225,14 @@ export interface DraftState {
   selectedSpells: Record<string, SummonerSpellId>; // playerId -> spell
 }
 
+export interface CombatLogEntry {
+  id: string;
+  text: string;
+  turnNumber: number;
+  timestamp: number;
+  type?: 'kill' | 'spell' | 'attack' | 'item' | 'system';
+}
+
 export interface GameRoomState {
   roomCode: string;
   phase: GamePhase;
@@ -243,6 +255,7 @@ export interface GameRoomState {
   // In-Game state
   turnQueue: string[]; // list of active player IDs for this round in turn order
   currentTurnIndex: number;
+  totalTurnsElapsed?: number;
   activePlayerId?: string;
   turnTimeRemainingSeconds: number;
   
@@ -251,6 +264,7 @@ export interface GameRoomState {
   champions: Record<string, ChampionState>; // keyed by playerId
   
   combatLogs: string[];
+  combatLogEntries?: CombatLogEntry[];
   visualFx: VisualFxAnimation[];
   floatingTexts: CombatFloatingText[];
 }

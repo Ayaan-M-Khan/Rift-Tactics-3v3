@@ -57,7 +57,7 @@ export const SUMMONER_SPELLS: Record<SummonerSpellId, SummonerSpellData> = {
     range: 5,
     targetType: 'enemy',
   },
-  cleanse: {
+    cleanse: {
     id: 'cleanse',
     name: 'Cleanse',
     description: 'Instantly remove all stuns, roots, silences, and slows from yourself.',
@@ -66,3 +66,20 @@ export const SUMMONER_SPELLS: Record<SummonerSpellId, SummonerSpellData> = {
     targetType: 'self',
   },
 };
+
+const SUMMONER_DDRAGON_MAP: Record<SummonerSpellId, string> = {
+  flash: 'SummonerFlash',
+  ignite: 'SummonerDot',
+  heal: 'SummonerHeal',
+  barrier: 'SummonerBarrier',
+  ghost: 'SummonerHaste',
+  exhaust: 'SummonerExhaust',
+  snowball: 'SummonerSnowball',
+  cleanse: 'SummonerBoost',
+};
+
+export function getSummonerSpellIconUrl(spellId: SummonerSpellId): string {
+  const dKey = SUMMONER_DDRAGON_MAP[spellId] || 'SummonerFlash';
+  return `https://ddragon.leagueoflegends.com/cdn/14.24.1/img/spell/${dKey}.png`;
+}
+

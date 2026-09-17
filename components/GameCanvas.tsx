@@ -17,7 +17,28 @@ import {
   LANE_TILES,
 } from '../data/map';
 import { CHAMPIONS } from '../data/champions';
+import { getChampionPortraitUrl } from '../lib/ddragon';
 import { sounds } from '../lib/soundEngine';
+
+// Global image cache for champion token portraits
+const championPortraitImageCache: Record<string, HTMLImageElement> = {};
+
+function getOrLoadChampionImage(champId: string): HTMLImageElement | null {
+  if (typeof window === 'undefined') return null;
+  const url = getChampionPortraitUrl(champId);
+  if (!url) return null;
+
+  if (championPortraitImageCache[url]) {
+    const img = championPortraitImageCache[url];
+    return img.complete && img.naturalWidth > 0 ? img : null;
+  }
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = url;
+  championPortraitImageCache[url] = img;
+  return null;
+}
 import {
   Sparkles,
   Swords,
@@ -1218,85 +1239,131 @@ export function GameCanvas({
         ctx.save();
         if (isStealth) ctx.globalAlpha = 0.55;
 
-        // Active Turn Halo
+        const centerX = px + TILE_SIZE / 2;
+        const centerY = py + TILE_SIZE / 2;
+        const radius = 20;
+
+        // Active Turn Halo / Pulse Ring
         if (isTurn) {
-          const haloPulse = Math.sin(now * 0.008) * 4;
+          const haloPulse = Math.sin(now * 0.008) * 3.5;
+          ctx.save();
           ctx.strokeStyle = '#c8aa6e';
-          ctx.lineWidth = 3;
-          ctx.shadowBlur = 12;
-          ctx.shadowColor = '#c8aa6e';
+          ctx.lineWidth = 3.5;
+          ctx.shadowBlur = 14;
+          ctx.shadowColor = '#f0e6d2';
           ctx.beginPath();
-          ctx.arc(px + TILE_SIZE / 2, py + TILE_SIZE / 2, 22 + haloPulse, 0, Math.PI * 2);
+          ctx.arc(centerX, centerY, radius + 4 + haloPulse, 0, Math.PI * 2);
           ctx.stroke();
-          ctx.shadowBlur = 0;
+          ctx.restore();
         }
 
         if (isSelectedSpectator) {
+          ctx.save();
           ctx.strokeStyle = '#facc15';
           ctx.lineWidth = 2;
           ctx.strokeRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+          ctx.restore();
         }
 
-        // Token Body
-        ctx.fillStyle = champData?.avatarColor || '#38bdf8';
-        ctx.beginPath();
-        ctx.arc(px + TILE_SIZE / 2, py + TILE_SIZE / 2, 19, 0, Math.PI * 2);
-        ctx.fill();
+        // Circular Clipped Portrait Token (Riot Data Dragon)
+        const portraitImg = getOrLoadChampionImage(champ.id);
 
-        ctx.strokeStyle = champ.team === 'blue' ? '#0ac8b9' : '#f43f5e';
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+
+        if (portraitImg) {
+          ctx.drawImage(portraitImg, centerX - radius, centerY - radius, radius * 2, radius * 2);
+        } else {
+          // Fallback avatar color & icon while loading
+          ctx.fillStyle = champData?.avatarColor || (champ.team === 'blue' ? '#0284c7' : '#e11d48');
+          ctx.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 14px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(champData?.iconText || '⚔️', centerX, centerY);
+        }
+        ctx.restore();
+
+        // Team Colored Ring Border (Blue: #0ac8b9, Red: #e84057, 3px stroke)
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = champ.team === 'blue' ? '#0ac8b9' : '#e84057';
         ctx.lineWidth = 3;
         ctx.stroke();
+        ctx.restore();
 
-        // Icon Emoji
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 15px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(champData?.iconText || '⚔️', px + TILE_SIZE / 2, py + TILE_SIZE / 2);
-
-        // Role badge
+        // Role badge in lower corner
+        ctx.save();
         ctx.fillStyle = '#050c12';
         ctx.beginPath();
-        ctx.arc(px + TILE_SIZE - 10, py + TILE_SIZE - 10, 8, 0, Math.PI * 2);
+        ctx.arc(px + TILE_SIZE - 9, py + TILE_SIZE - 9, 8, 0, Math.PI * 2);
         ctx.fill();
+        ctx.strokeStyle = '#c8aa6e';
+        ctx.lineWidth = 1;
+        ctx.stroke();
         ctx.fillStyle = '#c8aa6e';
-        ctx.font = '9px sans-serif';
-        ctx.fillText(champ.role[0].toUpperCase(), px + TILE_SIZE - 10, py + TILE_SIZE - 9);
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(champ.role[0].toUpperCase(), px + TILE_SIZE - 9, py + TILE_SIZE - 8.5);
+        ctx.restore();
 
-        // Health & Mana Bars
-        const barW = 44;
-        const barH = 5;
+        // Tactical Overlay: Name + Dual Health & Mana Bars
+        const barW = 48;
+        const hpBarH = 5;
+        const manaBarH = 3;
         const barX = px + (TILE_SIZE - barW) / 2;
-        const barY = py - 14;
+        const barY = py - 18;
 
+        // Champion Name with text shadow
+        ctx.save();
+        ctx.font = 'bold 9.5px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+        ctx.fillStyle = '#f0e6d2';
+        ctx.fillText(champData?.name || champ.playerName, centerX, barY - 2);
+        ctx.restore();
+
+        // Health Bar
+        ctx.save();
         ctx.fillStyle = '#050c12';
-        ctx.fillRect(barX, barY, barW, barH);
+        ctx.fillRect(barX - 1, barY - 1, barW + 2, hpBarH + 2);
         const hpPct = Math.max(0, champ.currentHp / champ.maxHp);
-        ctx.fillStyle = champ.team === 'blue' ? '#22c55e' : '#ef4444';
-        ctx.fillRect(barX, barY, barW * hpPct, barH);
+        ctx.fillStyle = champ.team === 'blue' ? '#22c55e' : '#e84057';
+        ctx.fillRect(barX, barY, barW * hpPct, hpBarH);
 
         if (champ.shield > 0) {
           const shieldPct = Math.min(1, champ.shield / champ.maxHp);
           ctx.fillStyle = '#38bdf8';
-          ctx.fillRect(barX + barW * hpPct - (barW * shieldPct) / 2, barY, barW * shieldPct, barH);
+          ctx.fillRect(barX + barW * hpPct - (barW * shieldPct) / 2, barY, barW * shieldPct, hpBarH);
         }
 
         ctx.strokeStyle = '#c8aa6e';
         ctx.lineWidth = 0.8;
-        ctx.strokeRect(barX, barY, barW, barH);
+        ctx.strokeRect(barX, barY, barW, hpBarH);
 
+        // Mana Bar
         if (champ.maxMana > 0) {
           const manaPct = Math.max(0, champ.currentMana / champ.maxMana);
+          const manaY = barY + hpBarH + 2;
           ctx.fillStyle = '#050c12';
-          ctx.fillRect(barX, barY + 5, barW, 3);
+          ctx.fillRect(barX - 1, manaY - 1, barW + 2, manaBarH + 2);
           ctx.fillStyle = '#0284c7';
-          ctx.fillRect(barX, barY + 5, barW * manaPct, 3);
+          ctx.fillRect(barX, manaY, barW * manaPct, manaBarH);
+          ctx.strokeStyle = '#1e3a8a';
+          ctx.lineWidth = 0.6;
+          ctx.strokeRect(barX, manaY, barW, manaBarH);
         }
-
-        // Name
-        ctx.fillStyle = '#f0e6d2';
-        ctx.font = 'bold 9px sans-serif';
-        ctx.fillText(champ.playerName, px + TILE_SIZE / 2, barY - 4);
+        ctx.restore();
         ctx.restore();
       });
 

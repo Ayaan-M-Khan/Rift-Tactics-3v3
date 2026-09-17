@@ -38,7 +38,15 @@ export default function RiftTacticsPage() {
       setIsLoading(false);
     };
 
+    const connectionTimeout = setTimeout(() => {
+      if (!socket.connected) {
+        setIsServerConnected(false);
+        setConnectionError('Multiplayer server unreachable — playing in local Offline Practice Mode.');
+      }
+    }, 3500);
+
     const handleConnect = () => {
+      clearTimeout(connectionTimeout);
       setConnectionError(null);
       setIsServerConnected(true);
 
@@ -86,6 +94,7 @@ export default function RiftTacticsPage() {
     }
 
     return () => {
+      clearTimeout(connectionTimeout);
       socket.off('room_updated', handleRoomUpdated);
       socket.off('connect', handleConnect);
       socket.off('connect_error', handleConnectError);
@@ -297,6 +306,26 @@ export default function RiftTacticsPage() {
     socket.emit('buy_item', { roomCode: room.roomCode, playerId, itemId });
   };
 
+  const handleSellItem = (itemIndex: number) => {
+    if (!room) return;
+    if (localEngineRef.current) {
+      localEngineRef.current.sellItem(room.roomCode, playerId, itemIndex);
+      return;
+    }
+    const socket = getSocket();
+    socket.emit('sell_item', { roomCode: room.roomCode, playerId, itemIndex });
+  };
+
+  const handleUndoBuyItem = () => {
+    if (!room) return;
+    if (localEngineRef.current) {
+      localEngineRef.current.undoBuyItem(room.roomCode, playerId);
+      return;
+    }
+    const socket = getSocket();
+    socket.emit('undo_buy_item', { roomCode: room.roomCode, playerId });
+  };
+
   const handleUseItem = (itemId: ItemId) => {
     if (!room) return;
     if (localEngineRef.current) {
@@ -472,6 +501,8 @@ export default function RiftTacticsPage() {
             onUndoMove={handleUndoMove}
             onPassTurn={handlePassTurn}
             onBuyItem={handleBuyItem}
+            onSellItem={handleSellItem}
+            onUndoBuyItem={handleUndoBuyItem}
             onUseItem={handleUseItem}
             onPlayAgain={handlePlayAgain}
             spectatorTargetId={spectatorTargetId}
