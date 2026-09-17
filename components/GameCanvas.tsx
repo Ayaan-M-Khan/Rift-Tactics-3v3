@@ -178,13 +178,16 @@ export function GameCanvas({
     if (prevActivePlayerRef.current !== room.activePlayerId) {
       if (room.activePlayerId === currentPlayerId) {
         sounds.playSpell();
-        setTurnBannerMessage('Your Turn');
+        const showTimer = setTimeout(() => {
+          setTurnBannerMessage('Your Turn');
+        }, 0);
 
         const hideTimer = setTimeout(() => {
           setTurnBannerMessage(null);
         }, 2600);
 
         return () => {
+          clearTimeout(showTimer);
           clearTimeout(hideTimer);
         };
       }

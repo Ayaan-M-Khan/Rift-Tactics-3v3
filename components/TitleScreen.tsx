@@ -23,15 +23,9 @@ export function TitleScreen({
   const [roomCode, setRoomCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [socketUrl, setSocketUrl] = useState('');
+  const [socketUrl, setSocketUrl] = useState(() => (typeof window !== 'undefined' ? window.localStorage.getItem('custom_socket_url') || '' : ''));
   const [showServerSettings, setShowServerSettings] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setSocketUrl(window.localStorage.getItem('custom_socket_url') || '');
-    }
-  }, []);
 
   useEffect(() => {
     // Ambient grassy particles / mystic runes canvas background
