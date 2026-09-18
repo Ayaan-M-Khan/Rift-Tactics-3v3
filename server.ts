@@ -4,59 +4,66 @@ import next from 'next';
 import { Server as SocketIOServer } from 'socket.io';
 import { GameEngine } from './server/gameEngine';
 
-const dev = process.env.NODE_ENV !== 'production';
-const app = next({ dev });
-const handle = app.getRequestHandler();
-
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
+const dev = process.env.NODE_ENV !== 'production';
+const app = next({ dev, hostname: HOST, port: PORT });
+const handle = app.getRequestHandler();
 
 async function bootstrap() {
   await app.prepare();
 
-  const server = createServer((req, res) => {
-    const parsedUrl = parse(req.url!, true);
-    const pathname = parsedUrl.pathname || '';
+  const server = createServer(async (req, res) => {
+    try {
+      const parsedUrl = parse(req.url!, true);
+      const pathname = parsedUrl.pathname || '';
 
-    // Handle health checks with full CORS support
-    if (
-      pathname === '/healthz' ||
-      pathname === '/healthz/' ||
-      pathname === '/health' ||
-      pathname === '/health/' ||
-      pathname === '/api/health' ||
-      pathname === '/api/health/' ||
-      pathname === '/api/healthz'
-    ) {
-      res.writeHead(200, {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-      });
-      res.end(JSON.stringify({ status: 'ok', multiplayer: 'ready', timestamp: Date.now() }));
-      return;
+      // Handle health checks with full CORS support
+      if (
+        pathname === '/healthz' ||
+        pathname === '/healthz/' ||
+        pathname === '/health' ||
+        pathname === '/health/' ||
+        pathname === '/api/health' ||
+        pathname === '/api/health/' ||
+        pathname === '/api/healthz'
+      ) {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+        });
+        res.end(JSON.stringify({ status: 'ok', multiplayer: 'ready', timestamp: Date.now() }));
+        return;
+      }
+
+      // Handle CORS preflight for any path
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': req.headers.origin || '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+          'Access-Control-Allow-Credentials': 'true',
+        });
+        res.end();
+        return;
+      }
+
+      // Critical: Do NOT pass /socket.io requests to Next.js handler
+      // Engine.IO will intercept and handle them directly
+      if (pathname === '/socket.io' || pathname.startsWith('/socket.io/')) {
+        return;
+      }
+
+      await handle(req, res, parsedUrl);
+    } catch (err) {
+      console.error('Error handling request:', err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.end('Internal Server Error');
+      }
     }
-
-    // Handle CORS preflight for any path
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': req.headers.origin || '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-        'Access-Control-Allow-Credentials': 'true',
-      });
-      res.end();
-      return;
-    }
-
-    // Critical: Do NOT pass /socket.io requests to Next.js handler
-    // Engine.IO will intercept and handle them directly
-    if (pathname === '/socket.io' || pathname.startsWith('/socket.io/')) {
-      return;
-    }
-
-    handle(req, res, parsedUrl);
   });
 
   const io = new SocketIOServer(server, {
@@ -68,11 +75,14 @@ async function bootstrap() {
       methods: ['GET', 'POST'],
       credentials: true,
     },
-    transports: ['polling', 'websocket'],
-    allowEIO3: true,
+    transports: ['websocket', 'polling'],
+    allowUpgrades: true,
+    perMessageDeflate: false,
+    httpCompression: false,
     pingInterval: 10000,
-    pingTimeout: 30000,
-    upgradeTimeout: 30000,
+    pingTimeout: 20000,
+    upgradeTimeout: 10000,
+    maxHttpBufferSize: 1e6,
     connectionStateRecovery: {
       maxDisconnectionDuration: 2 * 60 * 1000,
       skipMiddlewares: true,
@@ -306,6 +316,26 @@ async function bootstrap() {
       gameEngine.handleDisconnect(socket.id);
     });
   });
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use.`);
+    } else {
+      console.error('Server error:', err);
+    }
+  });
+
+  const shutdown = () => {
+    console.log('Shutting down Rift Tactics server...');
+    io.close(() => {
+      server.close(() => {
+        process.exit(0);
+      });
+    });
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 
   server.listen(PORT, HOST, () => {
     console.log(`> Rift Tactics server ready on http://${HOST}:${PORT}`);

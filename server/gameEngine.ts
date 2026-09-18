@@ -53,6 +53,19 @@ export class GameEngine {
   }
 
   private emitUpdate(room: GameRoomState) {
+    // 1. Prune expired visualFx (older than durationMs + 400ms)
+    const now = Date.now();
+    if (room.visualFx && room.visualFx.length > 0) {
+      room.visualFx = room.visualFx.filter((fx) => (now - fx.createdAt) <= (fx.durationMs || 600) + 400);
+    }
+    // 2. Prune expired floatingTexts (older than 2000ms, cap at 15)
+    if (room.floatingTexts && room.floatingTexts.length > 0) {
+      room.floatingTexts = room.floatingTexts.filter((ft) => (now - ft.createdAt) <= 2000).slice(-15);
+    }
+    // 3. Cap combatLogs to latest 30 entries to prevent payload bloat
+    if (room.combatLogs && room.combatLogs.length > 30) {
+      room.combatLogs = room.combatLogs.slice(-30);
+    }
     if (this.onRoomUpdated) {
       this.onRoomUpdated(room);
     }
@@ -207,6 +220,12 @@ export class GameEngine {
     if (abandonTimer) {
       clearTimeout(abandonTimer);
       this.abandonedRoomTimers.delete(roomCode);
+    }
+    // Clean up playerSessions associated with this roomCode
+    for (const [token, session] of this.playerSessions.entries()) {
+      if (session.roomCode === roomCode) {
+        this.playerSessions.delete(token);
+      }
     }
     this.rooms.delete(roomCode);
   }
@@ -585,7 +604,7 @@ export class GameEngine {
         if (choice) {
           this.lockPick(room.roomCode, player.id, choice.id);
         }
-      }, 1000);
+      }, 400);
     }
   }
 
@@ -2051,7 +2070,7 @@ export class GameEngine {
     const champ = room.champions[room.activePlayerId];
     if (!champ || !champ.isBot || champ.isDead) return;
 
-    // Delay bot action slightly for natural pacing (800ms)
+    // Natural, responsive bot action pacing (200ms + 150ms)
     setTimeout(() => {
       if (room.phase !== 'playing' || room.activePlayerId !== champ.playerId) return;
 
@@ -2148,8 +2167,8 @@ export class GameEngine {
 
         // Pass turn if no actions executed
         this.passTurn(room.roomCode, champ.playerId);
-      }, 400);
-    }, 600);
+      }, 150);
+    }, 200);
   }
 
   private findBestStepTowards(fromX: number, fromY: number, toX: number, toY: number, maxDist: number): { x: number; y: number } | null {

@@ -153,7 +153,20 @@ export function GameCanvas({
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const mousePosRef = useRef<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
   const mouseInCanvasRef = useRef(false);
-  const [hoveredTile, setHoveredTile] = useState<{ x: number; y: number } | null>(null);
+  const hoveredTileRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Stable refs to decouple high-frequency 60 FPS animation loop and handlers from React render cycle
+  const roomRef = useRef(room);
+  const targetModeRef = useRef(targetMode);
+  const currentPlayerIdRef = useRef(currentPlayerId);
+  const spectatorTargetIdRef = useRef(spectatorTargetId);
+
+  useEffect(() => {
+    roomRef.current = room;
+    targetModeRef.current = targetMode;
+    currentPlayerIdRef.current = currentPlayerId;
+    spectatorTargetIdRef.current = spectatorTargetId;
+  });
 
   // Turn alert banner state
   const prevActivePlayerRef = useRef<string | null | undefined>(null);
@@ -482,14 +495,19 @@ export function GameCanvas({
   // --- UNIT VISIBILITY CHECK FOR FOG OF WAR & MINIMAP ---
   const isUnitVisibleToTeam = useCallback(
     (unitX: number, unitY: number, unitTeam: Team): boolean => {
+      const curRoom = roomRef.current;
+      const curPlayerId = currentPlayerIdRef.current;
+      const curMe = curRoom.champions[curPlayerId];
+      const curMyTeam: Team = curMe ? curMe.team : (curRoom.players.find((p) => p.id === curPlayerId)?.team || 'blue');
+
       // Allied units are always visible
-      if (unitTeam === myTeam) return true;
+      if (unitTeam === curMyTeam) return true;
 
       const isInBrush = BRUSH_TILES.has(`${unitX},${unitY}`);
 
       // Check allied champions
-      for (const champ of Object.values(room.champions)) {
-        if (champ.team === myTeam && !champ.isDead) {
+      for (const champ of Object.values(curRoom.champions)) {
+        if (champ.team === curMyTeam && !champ.isDead) {
           const dist = getDistance(champ.x, champ.y, unitX, unitY);
           if (isInBrush) {
             if (dist <= 1) return true;
@@ -500,8 +518,8 @@ export function GameCanvas({
       }
 
       // Check allied minions
-      for (const minion of room.minions) {
-        if (minion.team === myTeam && minion.currentHp > 0) {
+      for (const minion of curRoom.minions) {
+        if (minion.team === curMyTeam && minion.currentHp > 0) {
           const dist = getDistance(minion.x, minion.y, unitX, unitY);
           if (isInBrush) {
             if (dist <= 1) return true;
@@ -512,9 +530,9 @@ export function GameCanvas({
       }
 
       // Check allied turret (true vision within 3 tiles, vision within 5 tiles)
-      const turretPos = myTeam === 'blue' ? BLUE_TURRET_POS : RED_TURRET_POS;
-      const alliedTurret = room.turrets[myTeam];
-      if (!alliedTurret.isDestroyed) {
+      const turretPos = curMyTeam === 'blue' ? BLUE_TURRET_POS : RED_TURRET_POS;
+      const alliedTurret = curRoom.turrets[curMyTeam];
+      if (alliedTurret && !alliedTurret.isDestroyed) {
         const turretDist = getDistance(turretPos.x, turretPos.y, unitX, unitY);
         if (isInBrush) {
           if (turretDist <= 3) return true;
@@ -525,7 +543,7 @@ export function GameCanvas({
 
       return false;
     },
-    [myTeam, room.champions, room.minions, room.turrets]
+    []
   );
 
   // --- 3. INTERACTIVE MINIMAP WITH PLAYER & UNIT ICONS ---
@@ -534,6 +552,9 @@ export function GameCanvas({
     if (!mini) return;
     const ctx = mini.getContext('2d');
     if (!ctx) return;
+
+    const room = roomRef.current;
+    const currentPlayerId = currentPlayerIdRef.current;
 
     const mW = mini.width;
     const mH = mini.height;
@@ -668,7 +689,7 @@ export function GameCanvas({
       ctx.lineWidth = 1.5;
       ctx.strokeRect(vpX, vpY, vpW, vpH);
     }
-  }, [currentPlayerId, isUnitVisibleToTeam, room.champions, room.minions, room.turrets, TILE_SIZE]);
+  }, [isUnitVisibleToTeam, TILE_SIZE]);
 
   // --- MAIN CANVAS RENDERING LOOP ---
   useEffect(() => {
@@ -688,6 +709,14 @@ export function GameCanvas({
     window.addEventListener('resize', resize);
 
     const render = () => {
+      const room = roomRef.current;
+      const targetMode = targetModeRef.current;
+      const currentPlayerId = currentPlayerIdRef.current;
+      const spectatorTargetId = spectatorTargetIdRef.current;
+      const me = room.champions[currentPlayerId];
+      const myTeam: Team = me ? me.team : (room.players.find((p) => p.id === currentPlayerId)?.team || 'blue');
+      const hoveredTile = hoveredTileRef.current;
+
       const width = canvas.width;
       const height = canvas.height;
       const now = Date.now();
@@ -1551,19 +1580,7 @@ export function GameCanvas({
     };
   }, [
     clampCamera,
-    currentPlayerId,
-    hoveredTile,
-    me,
-    myTeam,
     renderMinimap,
-    room.activePlayerId,
-    room.champions,
-    room.floatingTexts,
-    room.minions,
-    room.turrets,
-    room.visualFx,
-    spectatorTargetId,
-    targetMode,
     TILE_SIZE,
   ]);
 
@@ -1595,6 +1612,8 @@ export function GameCanvas({
     if (e.button === 0) {
       const { tileX, tileY } = getPointerWorldCoords(e.clientX, e.clientY);
       if (tileX < 0 || tileX >= MAP_WIDTH || tileY < 0 || tileY >= MAP_HEIGHT) return;
+
+      const room = roomRef.current;
 
       // Unit selection check
       const clickedChamp = Object.values(room.champions).find(
@@ -1652,11 +1671,9 @@ export function GameCanvas({
 
     const { tileX, tileY } = getPointerWorldCoords(e.clientX, e.clientY);
     if (tileX >= 0 && tileX < MAP_WIDTH && tileY >= 0 && tileY < MAP_HEIGHT) {
-      if (!hoveredTile || hoveredTile.x !== tileX || hoveredTile.y !== tileY) {
-        setHoveredTile({ x: tileX, y: tileY });
-      }
+      hoveredTileRef.current = { x: tileX, y: tileY };
     } else {
-      if (hoveredTile) setHoveredTile(null);
+      hoveredTileRef.current = null;
     }
   };
 
@@ -1667,7 +1684,7 @@ export function GameCanvas({
   const handlePointerLeave = () => {
     isDraggingRef.current = false;
     mouseInCanvasRef.current = false;
-    setHoveredTile(null);
+    hoveredTileRef.current = null;
   };
 
   // Zoom control via mouse wheel
