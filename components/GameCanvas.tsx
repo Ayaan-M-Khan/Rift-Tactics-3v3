@@ -59,7 +59,7 @@ export interface TargetSelectionMode {
   type: 'none' | 'move' | 'attack' | 'ability' | 'spell';
   abilityKey?: 'Q' | 'W' | 'E' | 'R';
   range?: number;
-  targetType?: 'single_enemy' | 'single_ally' | 'self' | 'line' | 'cone' | 'aoe' | 'dash_target' | 'tile' | 'enemy' | 'ally';
+  targetType?: 'single_enemy' | 'single_ally' | 'self' | 'line' | 'cone' | 'aoe' | 'dash_target' | 'tile' | 'enemy' | 'ally' | 'summon_decoy';
   areaRadius?: number;
 }
 

@@ -1,7 +1,7 @@
 import { ChampionData } from '../types/game';
-import ddragonData from './ddragon_champions.json';
+import { GENERATED_CHAMPIONS } from './champions_generated';
 
-export const CHAMPIONS: Record<string, ChampionData> = {
+const HAND_AUTHORED_RAW: Record<string, ChampionData> = {
   jinx: {
     id: 'jinx',
     name: 'Jinx',
@@ -376,8 +376,8 @@ export const CHAMPIONS: Record<string, ChampionData> = {
   },
 
   // Jungle Champions
-  lee_sin: {
-    id: 'lee_sin',
+  leesin: {
+    id: 'leesin',
     name: 'Lee Sin',
     title: 'The Blind Monk',
     role: 'jungle',
@@ -895,116 +895,183 @@ export const CHAMPIONS: Record<string, ChampionData> = {
       },
     ],
   },
+
+  akshan: {
+    id: 'akshan',
+    name: 'Akshan',
+    title: 'the Rogue Sentinel',
+    role: 'carry',
+    secondaryRole: 'Mid / Jungle',
+    avatarColor: '#c084fc',
+    accentColor: '#facc15',
+    iconText: '🏹',
+    lore: 'A vengeful vigilante of Runeterra who swings into battle on a grappling hook, striking from the shadows.',
+    baseHp: 610,
+    baseMana: 350,
+    baseAd: 52,
+    baseAp: 0,
+    baseArmor: 26,
+    baseMr: 30,
+    attackRange: 4,
+    moveSpeed: 3,
+    abilities: [
+      {
+        key: 'Q',
+        name: 'Avengerang',
+        description: 'Throws a boomerang up to 4 tiles that deals 90 physical damage on the way out and again on the way back.',
+        manaCost: 60,
+        cooldownRounds: 1,
+        currentCooldown: 0,
+        range: 4,
+        targetType: 'line',
+        baseDamage: 90,
+        scaling: { stat: 'ad', ratio: 0.9 },
+        damageType: 'physical',
+      },
+      {
+        key: 'W',
+        name: 'Going Rogue',
+        description: 'Akshan slips into camouflage, becoming invisible and untargetable for 2 turns. Attacking or casting an ability reveals him early.',
+        manaCost: 40,
+        cooldownRounds: 3,
+        currentCooldown: 0,
+        range: 1,
+        targetType: 'self',
+        statusEffect: 'stealth',
+        effectDuration: 2,
+      },
+      {
+        key: 'E',
+        name: 'Heroic Swing',
+        description: 'Fires a grappling hook and swings around it, gaining +2 Move Speed tiles for 1 turn.',
+        manaCost: 70,
+        cooldownRounds: 2,
+        currentCooldown: 0,
+        range: 1,
+        targetType: 'self',
+        statusEffect: 'ghost',
+        moveSpeedBonus: 2,
+        effectDuration: 1,
+      },
+      {
+        key: 'R',
+        name: 'Comeuppance',
+        description: 'Locks onto an enemy champion up to 8 tiles away and unloads stored bullets, dealing 200 physical damage plus 30% of their missing HP.',
+        manaCost: 100,
+        cooldownRounds: 4,
+        currentCooldown: 0,
+        range: 8,
+        targetType: 'single_enemy',
+        baseDamage: 200,
+        scaling: { stat: 'ad', ratio: 1.1 },
+        damageType: 'physical',
+      },
+    ],
+  },
+
+  neeko: {
+    id: 'neeko',
+    name: 'Neeko',
+    title: 'the Curious Chameleon',
+    role: 'support',
+    secondaryRole: 'Mid',
+    avatarColor: '#22c55e',
+    accentColor: '#ec4899',
+    iconText: '🦎',
+    lore: 'A shapeshifting Vastayan who can mimic anyone she meets, delighting in tricking foes with duplicates of herself.',
+    baseHp: 610,
+    baseMana: 450,
+    baseAd: 48,
+    baseAp: 0,
+    baseArmor: 21,
+    baseMr: 30,
+    attackRange: 4,
+    moveSpeed: 3,
+    abilities: [
+      {
+        key: 'Q',
+        name: 'Blooming Burst',
+        description: 'Throws a seed up to 4 tiles away that blooms, dealing 80 magic damage in a 1-tile area.',
+        manaCost: 60,
+        cooldownRounds: 1,
+        currentCooldown: 0,
+        range: 4,
+        targetType: 'aoe',
+        areaRadius: 1,
+        baseDamage: 80,
+        scaling: { stat: 'ap', ratio: 0.7 },
+        damageType: 'magic',
+      },
+      {
+        key: 'W',
+        name: 'Shapesplitter',
+        description: 'Neeko splits into a decoy clone that looks exactly like her, placed up to 3 tiles away. The decoy can be moved on later turns in place of moving Neeko herself. If it is attacked, targeted, or its 3-turn disguise runs out, it pops and deals magic damage to nearby enemies, revealing the trick.',
+        manaCost: 0,
+        cooldownRounds: 4,
+        currentCooldown: 0,
+        range: 3,
+        targetType: 'summon_decoy',
+        baseDamage: 120,
+        scaling: { stat: 'ap', ratio: 0.6 },
+        decoyDurationTurns: 3,
+      },
+      {
+        key: 'E',
+        name: 'Tangle-Barbs',
+        description: 'Slings a tangle up to 4 tiles in a line, dealing 90 magic damage and rooting everything it passes through for 1 turn.',
+        manaCost: 70,
+        cooldownRounds: 2,
+        currentCooldown: 0,
+        range: 4,
+        targetType: 'line',
+        baseDamage: 90,
+        scaling: { stat: 'ap', ratio: 0.5 },
+        damageType: 'magic',
+        statusEffect: 'root',
+      },
+      {
+        key: 'R',
+        name: 'Pop Blossom',
+        description: 'After a brief windup, Neeko leaps and slams down, dealing 220 magic damage and stunning all enemies within 2 tiles for 1 turn.',
+        manaCost: 100,
+        cooldownRounds: 4,
+        currentCooldown: 0,
+        range: 3,
+        targetType: 'aoe',
+        areaRadius: 2,
+        baseDamage: 220,
+        scaling: { stat: 'ap', ratio: 0.8 },
+        damageType: 'magic',
+        statusEffect: 'stun',
+      },
+    ],
+  },
 };
 
-// Augment CHAMPIONS with all 170+ Riot Data Dragon champions
-if (ddragonData && ddragonData.champions) {
-  for (const [key, c] of Object.entries(ddragonData.champions as Record<string, any>)) {
-      const lowerKey = key.toLowerCase();
-      const existing = CHAMPIONS[key] || CHAMPIONS[lowerKey];
-      if (!existing) {
-        const isRanged = c.stats.attackRange > 1;
-        const isMage = (c.tags || []).includes('Mage');
-        const isSupport = (c.tags || []).includes('Support');
-        const isJungle = (c.tags || []).includes('Assassin') || (c.roles || []).includes('JUNGLE');
+// Normalizes any champion id spelling (Data Dragon's PascalCase "LeeSin",
+// this file's own keys, apostrophes/spaces, etc.) down to a single canonical
+// form so lookups never silently miss and fall back to a default champion.
+export function normalizeChampionId(id: string): string {
+  return (id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
 
-        const role = isSupport ? 'support' : isJungle ? 'jungle' : 'carry';
-
-        const synthesizedAbilities = (c.abilities || []).map((ab: any, idx: number) => {
-          const abKey = (ab.key || ['Q', 'W', 'E', 'R'][idx] || 'Q') as 'Q' | 'W' | 'E' | 'R';
-          return {
-            key: abKey,
-            name: ab.name || `Ability ${abKey}`,
-            description: ab.description || 'Deals tactical damage to target.',
-            manaCost: abKey === 'R' ? 100 : 40 + idx * 10,
-            cooldownRounds: abKey === 'R' ? 3 : idx + 1,
-            currentCooldown: 0,
-            range: isRanged ? 4 : (idx === 0 ? 2 : 1),
-            targetType: idx === 0 ? 'line' : idx === 3 ? 'aoe' : 'single_enemy',
-            areaRadius: idx === 3 ? 1 : undefined,
-            baseDamage: abKey === 'R' ? 180 : 70 + idx * 25,
-            scaling: { stat: isMage ? 'ap' : 'ad', ratio: isMage ? 0.7 : 0.8 },
-            damageType: isMage ? 'magic' : 'physical',
-            statusEffect: idx === 1 ? 'slow' : idx === 3 ? 'stun' : undefined,
-          };
-        });
-
-        const champEntry: ChampionData = {
-          id: c.id,
-          name: c.name,
-          title: c.title,
-          role,
-          secondaryRole: (c.tags && c.tags[0]) || 'Champion',
-          avatarColor: isMage ? '#3b82f6' : isSupport ? '#10b981' : isRanged ? '#ec4899' : '#eab308',
-          accentColor: '#c8aa6e',
-          iconText: c.name.slice(0, 2),
-          lore: c.title,
-          baseHp: c.stats.hp || 580,
-          baseMana: c.stats.mp || 300,
-          baseAd: c.stats.attackDamage || 60,
-          baseAp: isMage ? 60 : 0,
-          baseArmor: c.stats.armor || 32,
-          baseMr: 30,
-          attackRange: c.stats.attackRange || (isRanged ? 3 : 1),
-          moveSpeed: 3,
-          abilities: synthesizedAbilities.length === 4 ? synthesizedAbilities : [
-            {
-              key: 'Q',
-              name: 'Strike',
-              description: 'Strikes target enemy dealing 80 damage.',
-              manaCost: 40,
-              cooldownRounds: 1,
-              currentCooldown: 0,
-              range: isRanged ? 4 : 1,
-              targetType: 'single_enemy',
-              baseDamage: 80,
-              damageType: 'physical',
-            },
-            {
-              key: 'W',
-              name: 'Guard',
-              description: 'Gains 100 shield for 1 turn.',
-              manaCost: 50,
-              cooldownRounds: 2,
-              currentCooldown: 0,
-              range: 1,
-              targetType: 'self',
-              shieldAmount: 100,
-            },
-            {
-              key: 'E',
-              name: 'Assault',
-              description: 'Damages and slows target for 1 turn.',
-              manaCost: 60,
-              cooldownRounds: 2,
-              currentCooldown: 0,
-              range: 2,
-              targetType: 'single_enemy',
-              baseDamage: 90,
-              statusEffect: 'slow',
-            },
-            {
-              key: 'R',
-              name: 'Ultimate',
-              description: 'Unleashes ultimate power dealing 200 damage to target.',
-              manaCost: 100,
-              cooldownRounds: 3,
-              currentCooldown: 0,
-              range: isRanged ? 4 : 2,
-              targetType: 'single_enemy',
-              baseDamage: 200,
-              damageType: 'physical',
-              statusEffect: 'stun',
-            },
-          ],
-        };
-
-        CHAMPIONS[c.id] = champEntry;
-        CHAMPIONS[lowerKey] = champEntry;
-      } else {
-        // Also ensure both cases exist in CHAMPIONS
-        CHAMPIONS[c.id] = existing;
-        CHAMPIONS[lowerKey] = existing;
-      }
-    }
+// All hand-authored champions above, keyed by their normalized id.
+const HAND_AUTHORED: Record<string, ChampionData> = (() => {
+  const out: Record<string, ChampionData> = {};
+  for (const champ of Object.values(HAND_AUTHORED_RAW)) {
+    out[normalizeChampionId(champ.id)] = champ;
   }
+  return out;
+})();
+
+// The remaining ~160 champions, auto-generated with kits tailored to their
+// real tags/role/description (see data/champions_generated.ts).
+const GENERATED: Record<string, ChampionData> = GENERATED_CHAMPIONS;
+
+export const CHAMPIONS: Record<string, ChampionData> = { ...GENERATED, ...HAND_AUTHORED };
+
+// Fast case/punctuation-insensitive lookup for a champion by any id spelling.
+export function getChampionData(rawId: string | undefined): ChampionData | undefined {
+  if (!rawId) return undefined;
+  return CHAMPIONS[rawId] || CHAMPIONS[normalizeChampionId(rawId)];
+}

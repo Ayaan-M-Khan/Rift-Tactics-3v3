@@ -41,14 +41,17 @@ export interface AbilityData {
   cooldownRounds: number;
   currentCooldown: number;
   range: number;
-  targetType: 'single_enemy' | 'single_ally' | 'self' | 'line' | 'cone' | 'aoe' | 'dash_target' | 'tile';
+  targetType: 'single_enemy' | 'single_ally' | 'self' | 'line' | 'cone' | 'aoe' | 'dash_target' | 'tile' | 'summon_decoy';
   areaRadius?: number; // for AOE
   baseDamage?: number;
   scaling?: { stat: 'ad' | 'ap'; ratio: number };
   damageType?: 'physical' | 'magic' | 'true';
   healAmount?: number;
   shieldAmount?: number;
-  statusEffect?: 'stun' | 'root' | 'silence' | 'slow' | 'knockback' | 'airborne';
+  statusEffect?: 'stun' | 'root' | 'silence' | 'slow' | 'knockback' | 'airborne' | 'stealth' | 'ghost';
+  effectDuration?: number; // turns the statusEffect lasts; defaults to 1 if omitted
+  moveSpeedBonus?: number; // used with statusEffect 'ghost' to set a custom bonus (default 2)
+  decoyDurationTurns?: number; // used with targetType 'summon_decoy'
   icon?: string;
 }
 
@@ -166,6 +169,21 @@ export interface MinionUnit {
   hasAttacked: boolean;
 }
 
+// A decoy illusion (e.g. Neeko's Shapesplitter) that occupies a tile,
+// visually impersonates the caster, and can be moved by its owner as
+// an alternative to moving their real champion. Popping it (being
+// attacked/targeted, or expiring) deals an AOE burst around it.
+export interface DecoyUnit {
+  id: string;
+  ownerId: string; // playerId of the champion it impersonates
+  team: Team;
+  championId: string; // which champion it visually mimics
+  x: number;
+  y: number;
+  turnsRemaining: number;
+  burstDamage: number; // pre-computed from caster's AP at creation time
+}
+
 export interface TurretUnit {
   team: Team;
   x: number;
@@ -264,6 +282,7 @@ export interface GameRoomState {
   turrets: Record<Team, TurretUnit>;
   minions: MinionUnit[];
   champions: Record<string, ChampionState>; // keyed by playerId
+  decoys: DecoyUnit[];
   
   combatLogs: string[];
   combatLogEntries?: CombatLogEntry[];

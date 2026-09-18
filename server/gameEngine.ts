@@ -3,6 +3,7 @@ import {
   ChampionData,
   ChampionState,
   CombatFloatingText,
+  DecoyUnit,
   DraftState,
   GamePhase,
   GameRoomState,
@@ -38,6 +39,9 @@ export class GameEngine {
   private rooms: Map<string, GameRoomState> = new Map();
   private playerSessions: Map<string, { roomCode: string; playerId: string }> = new Map();
   private turnTimers: Map<string, ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>> = new Map();
+  // NETWORK FIX: rooms with zero connected humans are never garbage-collected otherwise,
+  // leaking memory (and stale intervals) for the lifetime of the process.
+  private abandonedRoomTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private onRoomUpdated?: (room: GameRoomState) => void;
 
   constructor(onRoomUpdated?: (room: GameRoomState) => void) {
@@ -94,6 +98,7 @@ export class GameEngine {
       turnTimeRemainingSeconds: 30,
       turrets: this.createInitialTurrets(),
       minions: [],
+      decoys: [],
       champions: {},
       combatLogs: [`Lobby created. Code: ${roomCode}`],
       visualFx: [],
@@ -176,9 +181,34 @@ export class GameEngine {
     player.socketId = newSocketId;
     delete player.disconnectedAt;
 
+    // NETWORK FIX: someone came back, so cancel any pending room teardown.
+    const pendingTeardown = this.abandonedRoomTimers.get(room.roomCode);
+    if (pendingTeardown) {
+      clearTimeout(pendingTeardown);
+      this.abandonedRoomTimers.delete(room.roomCode);
+    }
+
     room.combatLogs.push(`${player.name} reconnected.`);
     this.emitUpdate(room);
     return { success: true, room, player };
+  }
+
+  // NETWORK FIX: tear down a room's timers and remove it from memory.
+  // Safe to call at any time -- ticking intervals already no-op once
+  // this.rooms.get(roomCode) returns undefined.
+  private cleanupRoom(roomCode: string) {
+    const timer = this.turnTimers.get(roomCode);
+    if (timer) {
+      clearInterval(timer as ReturnType<typeof setInterval>);
+      clearTimeout(timer as ReturnType<typeof setTimeout>);
+      this.turnTimers.delete(roomCode);
+    }
+    const abandonTimer = this.abandonedRoomTimers.get(roomCode);
+    if (abandonTimer) {
+      clearTimeout(abandonTimer);
+      this.abandonedRoomTimers.delete(roomCode);
+    }
+    this.rooms.delete(roomCode);
   }
 
   public handleDisconnect(socketId: string) {
@@ -207,6 +237,19 @@ export class GameEngine {
               this.passTurn(room.roomCode, player.id);
             }
           }, 3000);
+        }
+
+        // NETWORK FIX: if every human in the room is now disconnected, schedule
+        // the room for deletion after a grace period (in case they all reconnect),
+        // instead of leaking it in memory forever.
+        const anyHumanStillConnected = room.players.some((p) => !p.isBot && !p.isDisconnected);
+        if (!anyHumanStillConnected && !this.abandonedRoomTimers.has(room.roomCode)) {
+          const roomCode = room.roomCode;
+          const abandonTimer = setTimeout(() => {
+            this.abandonedRoomTimers.delete(roomCode);
+            this.cleanupRoom(roomCode);
+          }, 5 * 60 * 1000); // 5 minute grace period
+          this.abandonedRoomTimers.set(room.roomCode, abandonTimer);
         }
 
         this.emitUpdate(room);
@@ -548,6 +591,7 @@ export class GameEngine {
     room.redScore = 0;
     room.turrets = this.createInitialTurrets();
     room.minions = [];
+    room.decoys = [];
     room.champions = {};
 
     this.initRound(room);
@@ -697,6 +741,7 @@ export class GameEngine {
 
     // Spawn minion waves every two rounds.
     room.minions = [];
+    room.decoys = [];
     if (room.currentRound % 2 === 1) {
       room.waveNumber++;
       this.spawnMinionWave(room);
@@ -809,8 +854,10 @@ export class GameEngine {
     }
 
     // Status effect modifiers
-    if (champ.statusEffects.some((e) => e.type === 'ghost')) {
-      bonusMove += 2;
+    for (const e of champ.statusEffects) {
+      if (e.type === 'ghost') {
+        bonusMove += e.value ?? 2; // per-ability custom bonus (e.g. Akshan's Heroic Swing), default 2 for Ghost spell
+      }
     }
     if (champ.statusEffects.some((e) => e.type === 'slow')) {
       bonusMove = Math.max(-2, bonusMove - 1);
@@ -826,6 +873,71 @@ export class GameEngine {
     champ.effectiveMr = base.baseMr + bonusMr;
     champ.effectiveRange = base.attackRange;
     champ.effectiveMoveSpeed = Math.max(1, base.moveSpeed + bonusMove);
+  }
+
+  // Destroys a decoy, dealing its stored burst damage to nearby enemies of the
+  // popping team (i.e. the decoy owner's opponents), and reveals it in the log.
+  private popDecoy(room: GameRoomState, decoy: DecoyUnit, poppingTeam: Team) {
+    room.decoys = room.decoys.filter((d) => d.id !== decoy.id);
+    room.combatLogs.push(`It was a decoy! The real ${CHAMPIONS[decoy.championId]?.name || decoy.championId} is elsewhere.`);
+    this.addFloatingText(room, decoy.x, decoy.y, 'DECOY!', '#f472b6');
+    for (const enemy of Object.values(room.champions)) {
+      if (!enemy.isDead && enemy.team !== decoy.team && getDistance(enemy.x, enemy.y, decoy.x, decoy.y) <= 1) {
+        this.applyDamageToTarget(room, room.champions[decoy.ownerId] || enemy, 'champion', enemy.playerId, decoy.burstDamage, 'magic');
+      }
+    }
+    room.visualFx.push({
+      id: 'fx_' + Date.now(),
+      type: 'explosion',
+      startX: decoy.x,
+      startY: decoy.y,
+      targetX: decoy.x,
+      targetY: decoy.y,
+      radius: 1,
+      color: '#f472b6',
+      createdAt: Date.now(),
+      durationMs: 500,
+    });
+  }
+
+  // Lets a decoy's owner reposition it (e.g. Neeko's Shapesplitter) on their
+  // own turn, as an alternative to moving their real champion.
+  public moveDecoy(
+    roomCode: string,
+    playerId: string,
+    decoyId: string,
+    targetX: number,
+    targetY: number
+  ): { success: boolean; error?: string } {
+    const room = this.rooms.get(roomCode);
+    if (!room || room.phase !== 'playing') return { success: false, error: 'Game not active' };
+    if (room.activePlayerId !== playerId) return { success: false, error: 'Not your turn' };
+
+    const champ = room.champions[playerId];
+    if (!champ || champ.hasMoved) return { success: false, error: 'Already acted this turn' };
+
+    const decoy = room.decoys.find((d) => d.id === decoyId && d.ownerId === playerId);
+    if (!decoy) return { success: false, error: 'Decoy not found' };
+
+    if (!isTileWalkable(targetX, targetY)) return { success: false, error: 'Tile cannot be traversed' };
+    const dist = getDistance(decoy.x, decoy.y, targetX, targetY);
+    if (dist > champ.effectiveMoveSpeed) return { success: false, error: `Move range is ${champ.effectiveMoveSpeed} tiles` };
+
+    const occupied = Object.values(room.champions).some((c) => !c.isDead && c.x === targetX && c.y === targetY);
+    if (occupied) return { success: false, error: 'Tile occupied' };
+
+    decoy.x = targetX;
+    decoy.y = targetY;
+    champ.hasMoved = true; // moving the decoy uses the owner's move for the turn
+    room.combatLogs.push(`${champ.playerName} repositioned their decoy.`);
+    this.emitUpdate(room);
+    return { success: true };
+  }
+
+  // A champion under a 'stealth' effect (river brush, or an ability like Akshan's
+  // Going Rogue) cannot be directly targeted by attacks or abilities.
+  private isUntargetable(champ: ChampionState): boolean {
+    return champ.statusEffects.some((e) => e.type === 'stealth');
   }
 
   // --- In-Game Actions & Combat Resolution ---
@@ -900,7 +1012,7 @@ export class GameEngine {
   public basicAttack(
     roomCode: string,
     playerId: string,
-    targetType: 'champion' | 'minion' | 'turret',
+    targetType: 'champion' | 'minion' | 'turret' | 'decoy',
     targetId: string
   ): { success: boolean; error?: string } {
     const room = this.rooms.get(roomCode);
@@ -924,6 +1036,9 @@ export class GameEngine {
       if (!targetChamp || targetChamp.isDead || targetChamp.team === champ.team) {
         return { success: false, error: 'Invalid enemy champion target' };
       }
+      if (this.isUntargetable(targetChamp)) {
+        return { success: false, error: `${targetChamp.playerName} cannot be targeted right now` };
+      }
       targetX = targetChamp.x;
       targetY = targetChamp.y;
       targetArmor = targetChamp.effectiveArmor;
@@ -943,6 +1058,18 @@ export class GameEngine {
       targetY = turret.y;
       targetArmor = turret.armor;
       targetName = `${enemyTeam.toUpperCase()} Turret`;
+    } else if (targetType === 'decoy') {
+      const decoy = room.decoys.find((d) => d.id === targetId);
+      if (!decoy || decoy.team === champ.team) return { success: false, error: 'Invalid decoy target' };
+      const dist = getDistance(champ.x, champ.y, decoy.x, decoy.y);
+      if (dist > champ.effectiveRange) {
+        return { success: false, error: `Target out of range (${dist} > ${champ.effectiveRange})` };
+      }
+      champ.hasActed = true;
+      champ.hasAttacked = true;
+      this.popDecoy(room, decoy, champ.team);
+      this.emitUpdate(room);
+      return { success: true };
     }
 
     const dist = getDistance(champ.x, champ.y, targetX, targetY);
@@ -1052,14 +1179,39 @@ export class GameEngine {
         champ.currentHp = Math.min(champ.maxHp, champ.currentHp + ability.healAmount);
         this.addFloatingText(room, champ.x, champ.y, `+${ability.healAmount} HP`, '#22c55e');
       }
+      if (ability.statusEffect) {
+        champ.statusEffects.push({
+          type: ability.statusEffect,
+          durationTurns: ability.effectDuration ?? 1,
+          value: ability.statusEffect === 'ghost' ? (ability.moveSpeedBonus ?? 2) : undefined,
+        });
+        this.recalculateChampionStats(champ);
+        const label = ability.statusEffect === 'stealth' ? 'CAMOUFLAGE' : ability.statusEffect.toUpperCase();
+        this.addFloatingText(room, champ.x, champ.y, label, '#a855f7');
+      }
       room.combatLogs.push(`${champ.playerName} activated ${ability.name}!`);
+    } else if (ability.targetType === 'summon_decoy' && targetX !== undefined && targetY !== undefined) {
+      const decoy: DecoyUnit = {
+        id: `decoy_${champ.playerId}_${Date.now()}`,
+        ownerId: champ.playerId,
+        team: champ.team,
+        championId: champ.id,
+        x: targetX,
+        y: targetY,
+        turnsRemaining: ability.decoyDurationTurns ?? 3,
+        burstDamage: Math.max(20, Math.round((ability.baseDamage || 100) + champ.effectiveAp * (ability.scaling?.ratio ?? 0.5))),
+      };
+      // Only one decoy per owner at a time -- recasting replaces the old one.
+      room.decoys = room.decoys.filter((d) => d.ownerId !== champ.playerId);
+      room.decoys.push(decoy);
+      room.combatLogs.push(`${champ.playerName} split into a decoy!`);
     } else if (ability.targetType === 'line' && targetX !== undefined && targetY !== undefined) {
       const lineTiles = getLineTiles(champ.x, champ.y, targetX, targetY);
       // Affect enemies in line
       for (const tile of lineTiles) {
         if (tile.x === champ.x && tile.y === champ.y) continue;
         const enemyChamp = Object.values(room.champions).find(
-          (c) => !c.isDead && c.team !== champ.team && c.x === tile.x && c.y === tile.y
+          (c) => !c.isDead && c.team !== champ.team && c.x === tile.x && c.y === tile.y && !this.isUntargetable(c)
         );
         if (enemyChamp) {
           const armorOrMr = ability.damageType === 'magic' ? enemyChamp.effectiveMr : enemyChamp.effectiveArmor;
@@ -1067,10 +1219,13 @@ export class GameEngine {
           this.applyDamageToTarget(room, champ, 'champion', enemyChamp.playerId, finalDmg, ability.damageType || 'magic');
 
           if (ability.statusEffect) {
-            enemyChamp.statusEffects.push({ type: ability.statusEffect, durationTurns: 1 });
+            enemyChamp.statusEffects.push({ type: ability.statusEffect, durationTurns: ability.effectDuration ?? 1 });
             this.addFloatingText(room, enemyChamp.x, enemyChamp.y, ability.statusEffect.toUpperCase(), '#eab308');
           }
         }
+        // Popping a decoy caught in the line
+        const hitDecoy = room.decoys.find((d) => d.x === tile.x && d.y === tile.y && d.team !== champ.team);
+        if (hitDecoy) this.popDecoy(room, hitDecoy, champ.team);
       }
       room.visualFx.push({
         id: 'fx_' + Date.now(),
@@ -1087,12 +1242,12 @@ export class GameEngine {
     } else if (ability.targetType === 'aoe' && targetX !== undefined && targetY !== undefined) {
       const radius = ability.areaRadius || 1;
       for (const enemy of Object.values(room.champions)) {
-        if (!enemy.isDead && enemy.team !== champ.team) {
+        if (!enemy.isDead && enemy.team !== champ.team && !this.isUntargetable(enemy)) {
           if (getDistance(enemy.x, enemy.y, targetX, targetY) <= radius) {
             const finalDmg = Math.max(10, Math.round(damage * (100 / (100 + enemy.effectiveMr))));
             this.applyDamageToTarget(room, champ, 'champion', enemy.playerId, finalDmg, ability.damageType || 'magic');
             if (ability.statusEffect) {
-              enemy.statusEffects.push({ type: ability.statusEffect, durationTurns: 1 });
+              enemy.statusEffects.push({ type: ability.statusEffect, durationTurns: ability.effectDuration ?? 1 });
             }
           }
         }
@@ -1101,6 +1256,12 @@ export class GameEngine {
       for (const minion of room.minions) {
         if (minion.team !== champ.team && getDistance(minion.x, minion.y, targetX, targetY) <= radius) {
           this.applyDamageToTarget(room, champ, 'minion', minion.id, damage, ability.damageType || 'magic');
+        }
+      }
+      // Pop any enemy decoys caught in the blast
+      for (const decoy of [...room.decoys]) {
+        if (decoy.team !== champ.team && getDistance(decoy.x, decoy.y, targetX, targetY) <= radius) {
+          this.popDecoy(room, decoy, champ.team);
         }
       }
       room.visualFx.push({
@@ -1118,13 +1279,13 @@ export class GameEngine {
       room.combatLogs.push(`${champ.playerName} dropped ${ability.name} on (${targetX}, ${targetY})!`);
     } else if (ability.targetType === 'single_enemy' && targetUnitId) {
       const enemyChamp = room.champions[targetUnitId];
-      if (enemyChamp && !enemyChamp.isDead) {
+      if (enemyChamp && !enemyChamp.isDead && !this.isUntargetable(enemyChamp)) {
         const finalDmg = ability.damageType === 'true'
           ? damage
           : Math.max(10, Math.round(damage * (100 / (100 + enemyChamp.effectiveArmor))));
         this.applyDamageToTarget(room, champ, 'champion', enemyChamp.playerId, finalDmg, ability.damageType || 'physical');
         if (ability.statusEffect) {
-          enemyChamp.statusEffects.push({ type: ability.statusEffect, durationTurns: 1 });
+          enemyChamp.statusEffects.push({ type: ability.statusEffect, durationTurns: ability.effectDuration ?? 1 });
           this.addFloatingText(room, enemyChamp.x, enemyChamp.y, ability.statusEffect.toUpperCase(), '#ef4444');
         }
         room.combatLogs.push(`${champ.playerName} struck ${enemyChamp.playerName} with ${ability.name}!`);
@@ -1588,6 +1749,14 @@ export class GameEngine {
       if (champ.spellCooldownRounds > 0) champ.spellCooldownRounds--;
     }
 
+    // 1b. Decoy expiry -- pops on its own once its duration runs out
+    for (const decoy of [...room.decoys]) {
+      decoy.turnsRemaining--;
+      if (decoy.turnsRemaining <= 0) {
+        this.popDecoy(room, decoy, decoy.team === 'blue' ? 'red' : 'blue');
+      }
+    }
+
     // 2. Turret Attacks
     for (const team of ['blue', 'red'] as Team[]) {
       const turret = room.turrets[team];
@@ -1799,6 +1968,7 @@ export class GameEngine {
     delete room.draft;
     room.turrets = this.createInitialTurrets();
     room.minions = [];
+    room.decoys = [];
     room.champions = {};
     room.combatLogs = ['Ready for next match!'];
 

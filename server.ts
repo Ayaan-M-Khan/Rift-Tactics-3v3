@@ -169,6 +169,12 @@ async function bootstrap() {
       if (typeof callback === 'function') callback(result);
     });
 
+    // 14b. Move Decoy (e.g. Neeko's Shapesplitter) instead of moving your real champion
+    socket.on('move_decoy', ({ roomCode, playerId, decoyId, targetX, targetY }, callback) => {
+      const result = gameEngine.moveDecoy(roomCode, playerId, decoyId, targetX, targetY);
+      if (typeof callback === 'function') callback(result);
+    });
+
     // 15. Use Summoner Spell
     socket.on('use_summoner_spell', ({ roomCode, playerId, targetX, targetY, targetPlayerId }, callback) => {
       const result = gameEngine.useSummonerSpell(roomCode, playerId, targetX, targetY, targetPlayerId);
