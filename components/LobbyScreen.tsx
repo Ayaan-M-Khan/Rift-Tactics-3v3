@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { GameRoomState, LobbyPlayer, Role, Team } from '../types/game';
 import { sounds } from '../lib/soundEngine';
-import { Copy, Check, Swords, Bot, UserX, Shield, Crown, Share2 } from 'lucide-react';
+import { Copy, Check, Swords, Bot, UserX, Shield, Crown, Share2, LogOut } from 'lucide-react';
 
 interface LobbyScreenProps {
   room: GameRoomState;
@@ -12,6 +12,7 @@ interface LobbyScreenProps {
   onToggleBotFill: () => void;
   onKickPlayer: (targetPlayerId: string) => void;
   onStartDraft: () => void;
+  onLeaveLobby?: () => void;
 }
 
 export function LobbyScreen({
@@ -21,6 +22,7 @@ export function LobbyScreen({
   onToggleBotFill,
   onKickPlayer,
   onStartDraft,
+  onLeaveLobby,
 }: LobbyScreenProps) {
   const [copied, setCopied] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -174,6 +176,20 @@ export function LobbyScreen({
             {copiedLink ? <Check className="w-4 h-4 text-green-400" /> : <Share2 className="w-4 h-4" />}
             <span className="hidden sm:inline font-semibold text-[11px]">Invite Link</span>
           </button>
+          {onLeaveLobby && (
+            <button
+              id="btn-leave-lobby"
+              onClick={() => {
+                sounds.playClick();
+                onLeaveLobby();
+              }}
+              className="p-2 rounded border border-rose-900/60 hover:border-rose-500 bg-rose-950/30 text-rose-300 hover:text-rose-100 transition-all cursor-pointer flex items-center gap-1 text-xs"
+              title="Leave this lobby"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline font-semibold text-[11px]">Leave Lobby</span>
+            </button>
+          )}
         </div>
       </div>
 

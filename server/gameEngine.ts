@@ -211,6 +211,69 @@ export class GameEngine {
     this.rooms.delete(roomCode);
   }
 
+  public leaveRoom(roomCode: string, playerId?: string, socketId?: string): boolean {
+    const room = this.rooms.get(roomCode);
+    if (!room) return false;
+
+    const playerIndex = room.players.findIndex(
+      (p) => (playerId && p.id === playerId) || (socketId && p.socketId === socketId)
+    );
+    if (playerIndex === -1) return false;
+
+    const player = room.players[playerIndex];
+
+    if (room.phase === 'lobby') {
+      // In lobby, completely remove the player from the room
+      room.players.splice(playerIndex, 1);
+      room.combatLogs.push(`${player.name} left the lobby.`);
+
+      const remainingHumans = room.players.filter((p) => !p.isBot);
+      if (remainingHumans.length === 0) {
+        // No human players left in lobby -> tear down immediately
+        this.cleanupRoom(roomCode);
+        return true;
+      }
+
+      // If host left, reassign host to the first human
+      if (player.isHost || room.hostPlayerId === player.id) {
+        const nextHost = remainingHumans[0];
+        nextHost.isHost = true;
+        room.hostPlayerId = nextHost.id;
+        room.combatLogs.push(`${nextHost.name} is now the room host.`);
+      }
+
+      this.emitUpdate(room);
+      return true;
+    } else {
+      // In draft or playing phase, mark disconnected
+      player.isDisconnected = true;
+      player.disconnectedAt = Date.now();
+      room.combatLogs.push(`${player.name} left the game.`);
+
+      if (player.isHost || room.hostPlayerId === player.id) {
+        const nextHost = room.players.find((p) => !p.isDisconnected && !p.isBot);
+        if (nextHost) {
+          player.isHost = false;
+          nextHost.isHost = true;
+          room.hostPlayerId = nextHost.id;
+          room.combatLogs.push(`${nextHost.name} is now the room host.`);
+        }
+      }
+
+      const anyHumanConnected = room.players.some((p) => !p.isBot && !p.isDisconnected);
+      if (!anyHumanConnected && !this.abandonedRoomTimers.has(room.roomCode)) {
+        const abandonTimer = setTimeout(() => {
+          this.abandonedRoomTimers.delete(roomCode);
+          this.cleanupRoom(roomCode);
+        }, 60 * 1000);
+        this.abandonedRoomTimers.set(roomCode, abandonTimer);
+      }
+
+      this.emitUpdate(room);
+      return true;
+    }
+  }
+
   public handleDisconnect(socketId: string) {
     for (const room of this.rooms.values()) {
       const player = room.players.find((p) => p.socketId === socketId);
@@ -239,17 +302,21 @@ export class GameEngine {
           }, 3000);
         }
 
-        // NETWORK FIX: if every human in the room is now disconnected, schedule
-        // the room for deletion after a grace period (in case they all reconnect),
-        // instead of leaking it in memory forever.
+        // If in lobby phase and no humans remain, clean up immediately
         const anyHumanStillConnected = room.players.some((p) => !p.isBot && !p.isDisconnected);
-        if (!anyHumanStillConnected && !this.abandonedRoomTimers.has(room.roomCode)) {
-          const roomCode = room.roomCode;
-          const abandonTimer = setTimeout(() => {
-            this.abandonedRoomTimers.delete(roomCode);
-            this.cleanupRoom(roomCode);
-          }, 5 * 60 * 1000); // 5 minute grace period
-          this.abandonedRoomTimers.set(room.roomCode, abandonTimer);
+        if (!anyHumanStillConnected) {
+          if (room.phase === 'lobby') {
+            this.cleanupRoom(room.roomCode);
+            return;
+          }
+          if (!this.abandonedRoomTimers.has(room.roomCode)) {
+            const roomCode = room.roomCode;
+            const abandonTimer = setTimeout(() => {
+              this.abandonedRoomTimers.delete(roomCode);
+              this.cleanupRoom(roomCode);
+            }, 60 * 1000); // 1 minute grace period for active game
+            this.abandonedRoomTimers.set(room.roomCode, abandonTimer);
+          }
         }
 
         this.emitUpdate(room);

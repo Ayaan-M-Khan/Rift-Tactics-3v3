@@ -84,8 +84,24 @@ async function bootstrap() {
   });
 
   io.on('connection', (socket) => {
+    const leavePreviousRooms = () => {
+      const prevRoom = socket.data.roomCode;
+      const prevPlayer = socket.data.playerId;
+      if (prevRoom) {
+        gameEngine.leaveRoom(prevRoom, prevPlayer, socket.id);
+      }
+      for (const r of socket.rooms) {
+        if (r !== socket.id) {
+          socket.leave(r);
+        }
+      }
+      delete socket.data.roomCode;
+      delete socket.data.playerId;
+    };
+
     // 1. Create Room
     socket.on('create_room', ({ hostName }, callback) => {
+      leavePreviousRooms();
       const result = gameEngine.createRoom(hostName, socket.id);
       socket.join(result.room.roomCode);
       socket.data.roomCode = result.room.roomCode;
@@ -95,8 +111,17 @@ async function bootstrap() {
 
     // 2. Join Room
     socket.on('join_room', ({ roomCode, playerName }, callback) => {
-      const result = gameEngine.joinRoom(roomCode, playerName, socket.id);
+      const code = (roomCode || '').toUpperCase().trim();
+      if (socket.data.roomCode && socket.data.roomCode !== code) {
+        leavePreviousRooms();
+      }
+      const result = gameEngine.joinRoom(code, playerName, socket.id);
       if (result.success && result.room && result.playerId) {
+        for (const r of socket.rooms) {
+          if (r !== socket.id && r !== result.room.roomCode) {
+            socket.leave(r);
+          }
+        }
         socket.join(result.room.roomCode);
         socket.data.roomCode = result.room.roomCode;
         socket.data.playerId = result.playerId;
@@ -105,14 +130,34 @@ async function bootstrap() {
     });
 
     // 3. Reconnect Session
-    socket.on('reconnect_session', ({ sessionToken }, callback) => {
+    socket.on('reconnect_session', ({ sessionToken, roomCode }, callback) => {
+      const targetCode = roomCode ? roomCode.toUpperCase().trim() : undefined;
+      if (socket.data.roomCode && targetCode && socket.data.roomCode !== targetCode) {
+        leavePreviousRooms();
+      }
       const result = gameEngine.reconnectPlayer(sessionToken, socket.id);
       if (result.success && result.room && result.player) {
+        for (const r of socket.rooms) {
+          if (r !== socket.id && r !== result.room.roomCode) {
+            socket.leave(r);
+          }
+        }
         socket.join(result.room.roomCode);
         socket.data.roomCode = result.room.roomCode;
         socket.data.playerId = result.player.id;
       }
       if (typeof callback === 'function') callback(result);
+    });
+
+    // 3b. Explicit Leave Room
+    socket.on('leave_room', ({ roomCode, playerId }, callback) => {
+      const code = roomCode || socket.data.roomCode;
+      const pid = playerId || socket.data.playerId;
+      if (code) {
+        gameEngine.leaveRoom(code, pid, socket.id);
+      }
+      leavePreviousRooms();
+      if (typeof callback === 'function') callback({ success: true });
     });
 
     // 4. Lobby Slot Customization

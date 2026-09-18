@@ -70,12 +70,19 @@ export default function RiftTacticsPage() {
     const savedSession = loadSession();
 
     const unsubRoom = network.onRoomUpdated((updatedRoom: GameRoomState) => {
-      setRoom(updatedRoom);
+      setRoom((prev) => {
+        // Enforce connecting to only the latest active room
+        if (prev && prev.roomCode !== updatedRoom.roomCode) {
+          return prev;
+        }
+        return updatedRoom;
+      });
       setReconnectFinished(true);
     });
 
     // Auto reconnect if session saved
     if (savedSession && savedSession.sessionToken) {
+      network.setActiveRoom(savedSession.roomCode, savedSession.playerId);
       network.reconnectSession(
         savedSession.sessionToken,
         savedSession.roomCode,
@@ -83,6 +90,11 @@ export default function RiftTacticsPage() {
           if (res && res.success && res.room && res.player) {
             setRoom(res.room);
             setPlayerId(res.player.id);
+          } else {
+            clearGameSession();
+            network.setActiveRoom(null, null);
+            setRoom(null);
+            setPlayerId('');
           }
           setReconnectFinished(true);
         }
@@ -93,6 +105,16 @@ export default function RiftTacticsPage() {
       unsubRoom();
     };
   }, []);
+
+  // Leave room and reset back to title screen
+  const handleLeaveRoom = () => {
+    const network = getGameNetwork();
+    network.leaveRoom();
+    clearGameSession();
+    setRoom(null);
+    setPlayerId('');
+    setReconnectFinished(true);
+  };
 
   // 1. Create Room
   const handleCreateRoom = (hostName: string) => {
@@ -310,8 +332,7 @@ export default function RiftTacticsPage() {
           </p>
           <button
             onClick={() => {
-              clearGameSession();
-              setReconnectFinished(true);
+              handleLeaveRoom();
             }}
             className="px-4 py-1.5 rounded bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-medium border border-zinc-700/60 transition-colors cursor-pointer"
           >
@@ -338,6 +359,7 @@ export default function RiftTacticsPage() {
           onToggleBotFill={handleToggleBotFill}
           onKickPlayer={handleKickPlayer}
           onStartDraft={handleStartDraft}
+          onLeaveLobby={handleLeaveRoom}
         />
       ) : room.phase === 'ban' || room.phase === 'pick' ? (
         <DraftScreen

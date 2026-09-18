@@ -85,6 +85,7 @@ class GameNetworkClient {
   }
 
   private broadcastToMesh(message: any) {
+    if (this.currentMode !== 'mesh') return;
     if (this.channel) {
       this.channel.postMessage(message);
     }
@@ -137,13 +138,27 @@ class GameNetworkClient {
     });
 
     this.socket.on('room_updated', (room: GameRoomState) => {
+      // Discard any room updates that do not belong to our active room!
+      if (this.activeRoomCode && room.roomCode !== this.activeRoomCode) {
+        return;
+      }
+      if (!this.activeRoomCode) {
+        this.activeRoomCode = room.roomCode;
+      }
       this.roomUpdatedListeners.forEach((cb) => cb(room));
-      this.broadcastToMesh({ type: 'room_updated', room });
+      if (this.currentMode === 'mesh') {
+        this.broadcastToMesh({ type: 'room_updated', room });
+      }
     });
 
-    this.socket.on('draft_hovered', (data: { playerId: string; championId: string }) => {
+    this.socket.on('draft_hovered', (data: { playerId: string; championId: string; roomCode?: string }) => {
+      if (data.roomCode && this.activeRoomCode && data.roomCode !== this.activeRoomCode) {
+        return;
+      }
       this.draftHoveredListeners.forEach((cb) => cb(data));
-      this.broadcastToMesh({ type: 'draft_hovered', data });
+      if (this.currentMode === 'mesh') {
+        this.broadcastToMesh({ type: 'draft_hovered', data });
+      }
     });
 
     if (this.socket.connected) {
@@ -217,13 +232,21 @@ class GameNetworkClient {
   // --- Local Mesh Message Handling ---
   private handleMeshMessage(msg: any) {
     if (!msg || typeof msg !== 'object') return;
+    // In server mode, never accept mesh updates from other browser tabs
+    if (this.currentMode === 'server') return;
 
     if (msg.type === 'room_updated' && msg.room) {
+      if (this.activeRoomCode && msg.room.roomCode !== this.activeRoomCode) {
+        return;
+      }
       this.roomUpdatedListeners.forEach((cb) => cb(msg.room));
       return;
     }
 
     if (msg.type === 'draft_hovered' && msg.data) {
+      if (msg.data.roomCode && this.activeRoomCode && msg.data.roomCode !== this.activeRoomCode) {
+        return;
+      }
       this.draftHoveredListeners.forEach((cb) => cb(msg.data));
       return;
     }
@@ -420,18 +443,34 @@ class GameNetworkClient {
   ) {
     const isReady = await this.ensureSocketConnected(3000);
     if (isReady && this.socket?.connected) {
-      this.socket.emit('reconnect_session', { sessionToken, roomCode }, callback);
+      this.socket.emit('reconnect_session', { sessionToken, roomCode }, (res: any) => {
+        if (res?.success && res.room && res.player) {
+          this.activeRoomCode = res.room.roomCode;
+          this.activePlayerId = res.player.id;
+        }
+        callback(res);
+      });
       return;
     }
 
     if (this.localEngine) {
       const res = this.localEngine.reconnectPlayer(sessionToken);
+      if (res?.success && res.room && res.player) {
+        this.activeRoomCode = res.room.roomCode;
+        this.activePlayerId = res.player.id;
+      }
       callback(res);
       return;
     }
 
     const requestId = 'req_' + Math.random().toString(36).substring(2, 9);
-    this.pendingCallbacks.set(requestId, callback);
+    this.pendingCallbacks.set(requestId, (res) => {
+      if (res?.success && res.room && res.player) {
+        this.activeRoomCode = res.room.roomCode;
+        this.activePlayerId = res.player.id;
+      }
+      callback(res);
+    });
     this.broadcastToMesh({
       type: 'peer_action',
       action: 'reconnect_session',
@@ -573,6 +612,27 @@ class GameNetworkClient {
 
   public playAgain(roomCode: string, cb?: (res: any) => void) {
     this.emitAction('play_again', { roomCode }, cb);
+  }
+
+  public leaveRoom(callback?: (res: any) => void) {
+    const prevRoom = this.activeRoomCode;
+    const prevPlayer = this.activePlayerId;
+    this.activeRoomCode = null;
+    this.activePlayerId = null;
+
+    if (this.currentMode === 'server' && this.socket?.connected) {
+      this.socket.emit('leave_room', { roomCode: prevRoom, playerId: prevPlayer }, callback);
+    } else if (this.localEngine && prevRoom) {
+      this.localEngine.leaveRoom(prevRoom, prevPlayer || undefined);
+      if (callback) callback({ success: true });
+    } else {
+      if (callback) callback({ success: true });
+    }
+  }
+
+  public setActiveRoom(roomCode: string | null, playerId: string | null = null) {
+    this.activeRoomCode = roomCode;
+    this.activePlayerId = playerId;
   }
 }
 
