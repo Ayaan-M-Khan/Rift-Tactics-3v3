@@ -17,6 +17,7 @@ export default function RiftTacticsPage() {
   const [spectatorTargetId, setSpectatorTargetId] = useState<string | undefined>(undefined);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isServerConnected, setIsServerConnected] = useState<boolean>(false);
+  const [isServerConnecting, setIsServerConnecting] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Initialize socket and attempt session restore
@@ -33,17 +34,25 @@ export default function RiftTacticsPage() {
       setIsLoading(false);
     };
 
+    // NETWORK FIX: free-tier hosts (e.g. Render) can take 30-60+ seconds to
+    // wake from a cold start. The old 6s timeout declared the server "offline"
+    // long before a cold instance could ever finish waking up, even though it
+    // would go on to connect successfully moments later. We now show a
+    // "Connecting..." state during this window instead of a false negative,
+    // and give it a full minute before actually giving up.
     const connectionTimeout = setTimeout(() => {
       if (!socket.connected) {
         setIsServerConnected(false);
+        setIsServerConnecting(false);
         setConnectionError('Multiplayer server unreachable. Check Server Settings or try again.');
       }
-    }, 6000);
+    }, 60000);
 
     const handleConnect = () => {
       clearTimeout(connectionTimeout);
       setConnectionError(null);
       setIsServerConnected(true);
+      setIsServerConnecting(false);
 
       // Automatically emit reconnect_session using stored sessionToken and roomCode to restore game state
       const saved = loadSession();
@@ -67,7 +76,12 @@ export default function RiftTacticsPage() {
 
     const handleConnectError = () => {
       setIsServerConnected(false);
-      setConnectionError('Multiplayer server offline. Check Server Settings or try again.');
+      // Still within the cold-start grace window -- keep showing "Connecting..."
+      // rather than flipping straight to an alarming "offline" state, since
+      // socket.io will keep retrying in the background.
+      if (!socket.connected) {
+        setIsServerConnecting(true);
+      }
       setIsLoading(false);
     };
 
@@ -356,6 +370,7 @@ export default function RiftTacticsPage() {
       ) : !room ? (
         <TitleScreen
           isServerConnected={isServerConnected}
+          isServerConnecting={isServerConnecting}
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}
           onQuickSolo={handleQuickSolo}

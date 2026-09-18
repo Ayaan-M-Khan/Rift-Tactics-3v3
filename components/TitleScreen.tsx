@@ -6,6 +6,7 @@ import { Volume2, VolumeX, Shield, Swords, Sparkles, Users, Server } from 'lucid
 
 interface TitleScreenProps {
   isServerConnected?: boolean;
+  isServerConnecting?: boolean;
   onCreateRoom: (hostName: string) => void;
   onJoinRoom: (roomCode: string, playerName: string) => void;
   onQuickSolo: (hostName: string) => void;
@@ -14,6 +15,7 @@ interface TitleScreenProps {
 
 export function TitleScreen({
   isServerConnected = true,
+  isServerConnecting = false,
   onCreateRoom,
   onJoinRoom,
   onQuickSolo,
@@ -230,6 +232,11 @@ export function TitleScreen({
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
                 <span>Online Multiplayer Ready</span>
+              </div>
+            ) : isServerConnecting ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-950/70 border border-sky-500/40 text-sky-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
+                <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+                <span>Connecting to Server... (may take up to a minute on first load)</span>
               </div>
             ) : (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/70 border border-amber-500/40 text-amber-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
