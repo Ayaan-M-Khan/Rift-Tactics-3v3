@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { GameRoomState, ItemId, Role, SummonerSpellId, Team } from '../types/game';
-import { getSocket, loadSession, saveSession, clearGameSession, reconnectWithUrl } from '../lib/socket';
+import { loadSession, saveSession, clearGameSession, reconnectWithUrl } from '../lib/socket';
+import { getGameNetwork, NetworkMode } from '../lib/gameNetwork';
 import { TitleScreen } from '../components/TitleScreen';
 import { LobbyScreen } from '../components/LobbyScreen';
 import { DraftScreen } from '../components/DraftScreen';
@@ -16,9 +17,17 @@ export default function RiftTacticsPage() {
   const [targetMode, setTargetMode] = useState<TargetSelectionMode>({ type: 'none' });
   const [spectatorTargetId, setSpectatorTargetId] = useState<string | undefined>(undefined);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [isServerConnected, setIsServerConnected] = useState<boolean>(false);
-  const [isServerConnecting, setIsServerConnecting] = useState<boolean>(true);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isServerConnected, setIsServerConnected] = useState<boolean>(true);
+  const [isServerConnecting, setIsServerConnecting] = useState<boolean>(false);
+  const [networkMode, setNetworkMode] = useState<NetworkMode>('server');
+  const [serverErrorMessage, setServerErrorMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = loadSession();
+      return !!(saved && saved.sessionToken);
+    }
+    return false;
+  });
   const [initialRoomCode] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -30,107 +39,49 @@ export default function RiftTacticsPage() {
     return '';
   });
 
-  // Initialize socket and attempt session restore
+  // Initialize unified network client (Socket.IO + Local Cross-Tab Mesh)
   useEffect(() => {
-    const socket = getSocket();
-
+    const network = getGameNetwork();
     const savedSession = loadSession();
-    if (savedSession && savedSession.sessionToken) {
-      setTimeout(() => setIsLoading(true), 0);
-    }
 
-    const handleRoomUpdated = (updatedRoom: GameRoomState) => {
+    const unsubStatus = network.onStatusChange((status) => {
+      setIsServerConnected(status.connected);
+      setIsServerConnecting(status.connecting);
+      setNetworkMode(status.mode);
+      setServerErrorMessage(status.errorMessage);
+    });
+
+    const unsubRoom = network.onRoomUpdated((updatedRoom: GameRoomState) => {
       setRoom(updatedRoom);
       setIsLoading(false);
-    };
+    });
 
-    // NETWORK FIX: free-tier hosts (e.g. Render) can take 30-60+ seconds to
-    // wake from a cold start. The old 6s timeout declared the server "offline"
-    // long before a cold instance could ever finish waking up, even though it
-    // would go on to connect successfully moments later. We now show a
-    // "Connecting..." state during this window instead of a false negative,
-    // and give it a full minute before actually giving up.
-    const connectionTimeout = setTimeout(() => {
-      if (!socket.connected) {
-        setIsServerConnected(false);
-        setIsServerConnecting(false);
-        setConnectionError('Multiplayer server unreachable. Check Server Settings or try again.');
-      }
-    }, 60000);
-
-    const handleConnect = () => {
-      clearTimeout(connectionTimeout);
-      setConnectionError(null);
-      setIsServerConnected(true);
-      setIsServerConnecting(false);
-
-      // Automatically emit reconnect_session using stored sessionToken and roomCode to restore game state
-      const saved = loadSession();
-      if (saved && saved.sessionToken) {
-        setIsLoading(true);
-        socket.emit(
-          'reconnect_session',
-          { sessionToken: saved.sessionToken, roomCode: saved.roomCode },
-          (res: { success: boolean; room?: GameRoomState; player?: { id: string } }) => {
-            if (res && res.success && res.room && res.player) {
-              setRoom(res.room);
-              setPlayerId(res.player.id);
-            }
-            setIsLoading(false);
+    // Auto reconnect if session saved
+    if (savedSession && savedSession.sessionToken) {
+      network.reconnectSession(
+        savedSession.sessionToken,
+        savedSession.roomCode,
+        (res: { success: boolean; room?: GameRoomState; player?: { id: string } }) => {
+          if (res && res.success && res.room && res.player) {
+            setRoom(res.room);
+            setPlayerId(res.player.id);
           }
-        );
-      } else {
-        setIsLoading(false);
-      }
-    };
-
-    const handleConnectError = () => {
-      setIsServerConnected(false);
-      // Still within the cold-start grace window -- keep showing "Connecting..."
-      // rather than flipping straight to an alarming "offline" state, since
-      // socket.io will keep retrying in the background.
-      if (!socket.connected) {
-        setIsServerConnecting(true);
-      }
-      setIsLoading(false);
-    };
-
-    const handleDisconnect = (reason: string) => {
-      setIsServerConnected(false);
-      if (reason === 'io server disconnect') {
-        socket.connect();
-      }
-      setConnectionError('Network connection interrupted. Reconnecting...');
-    };
-
-    socket.on('room_updated', handleRoomUpdated);
-    socket.on('connect', handleConnect);
-    socket.on('connect_error', handleConnectError);
-    socket.on('disconnect', handleDisconnect);
-
-    if (socket.connected) {
-      handleConnect();
+          setIsLoading(false);
+        }
+      );
     }
 
     return () => {
-      clearTimeout(connectionTimeout);
-      socket.off('room_updated', handleRoomUpdated);
-      socket.off('connect', handleConnect);
-      socket.off('connect_error', handleConnectError);
-      socket.off('disconnect', handleDisconnect);
+      unsubStatus();
+      unsubRoom();
     };
   }, []);
 
   // 1. Create Room
   const handleCreateRoom = (hostName: string) => {
     setConnectionError(null);
-    if (!isServerConnected) {
-      setConnectionError('Connect to the multiplayer server before creating a room.');
-      return;
-    }
-
-    const socket = getSocket();
-    socket.emit('create_room', { hostName }, (res: { room: GameRoomState; playerId: string; sessionToken: string }) => {
+    const network = getGameNetwork();
+    network.createRoom(hostName, (res: { room: GameRoomState; playerId: string; sessionToken: string }) => {
       if (res && res.room) {
         setRoom(res.room);
         setPlayerId(res.playerId);
@@ -147,14 +98,10 @@ export default function RiftTacticsPage() {
   // 2. Join Room
   const handleJoinRoom = (roomCode: string, playerName: string) => {
     setConnectionError(null);
-    if (!isServerConnected) {
-      setConnectionError('Connect to the multiplayer server before joining a room.');
-      return;
-    }
-    const socket = getSocket();
-    socket.emit(
-      'join_room',
-      { roomCode, playerName },
+    const network = getGameNetwork();
+    network.joinRoom(
+      roomCode,
+      playerName,
       (res: { success: boolean; room?: GameRoomState; playerId?: string; sessionToken?: string; error?: string }) => {
         if (res.success && res.room && res.playerId && res.sessionToken) {
           setRoom(res.room);
@@ -175,14 +122,8 @@ export default function RiftTacticsPage() {
   // 3. Quick Solo vs Bots (Play vs AI)
   const handleQuickSolo = (hostName: string) => {
     setConnectionError(null);
-    if (!isServerConnected) {
-      setConnectionError('Connect to the multiplayer server before starting a game.');
-      return;
-    }
-
-    // Mode A: Server Multiplayer
-    const socket = getSocket();
-    socket.emit('create_room', { hostName }, (res: { room: GameRoomState; playerId: string; sessionToken: string }) => {
+    const network = getGameNetwork();
+    network.createRoom(hostName, (res: { room: GameRoomState; playerId: string; sessionToken: string }) => {
       if (res && res.room) {
         setRoom(res.room);
         setPlayerId(res.playerId);
@@ -195,7 +136,7 @@ export default function RiftTacticsPage() {
 
         // Automatically trigger start draft with bots enabled
         setTimeout(() => {
-          socket.emit('start_draft', { roomCode: res.room.roomCode, hostPlayerId: res.playerId });
+          network.startDraft(res.room.roomCode, res.playerId);
         }, 150);
       }
     });
@@ -209,88 +150,74 @@ export default function RiftTacticsPage() {
   // Lobby actions
   const handleUpdateSlot = (team: Team, role: Role) => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('update_lobby_slot', { roomCode: room.roomCode, playerId, team, role });
+    getGameNetwork().updateLobbySlot(room.roomCode, playerId, team, role);
   };
 
   const handleToggleBotFill = () => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('toggle_bot_fill', { roomCode: room.roomCode, playerId });
+    getGameNetwork().toggleBotFill(room.roomCode, playerId);
   };
 
   const handleKickPlayer = (targetPlayerId: string) => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('kick_player', { roomCode: room.roomCode, hostPlayerId: playerId, targetPlayerId });
+    getGameNetwork().kickPlayer(room.roomCode, playerId, targetPlayerId);
   };
 
   const handleStartDraft = () => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('start_draft', { roomCode: room.roomCode, hostPlayerId: playerId });
+    getGameNetwork().startDraft(room.roomCode, playerId);
   };
 
   // Draft actions
   const handleLockBan = (championId: string) => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('lock_ban', { roomCode: room.roomCode, playerId, championId });
+    getGameNetwork().lockBan(room.roomCode, playerId, championId);
   };
 
   const handleLockPick = (championId: string) => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('lock_pick', { roomCode: room.roomCode, playerId, championId });
+    getGameNetwork().lockPick(room.roomCode, playerId, championId);
   };
 
   const handleSelectSpell = (spellId: SummonerSpellId) => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('set_summoner_spell', { roomCode: room.roomCode, playerId, spellId });
+    getGameNetwork().setSummonerSpell(room.roomCode, playerId, spellId);
   };
 
   // Combat actions
   const handleUndoMove = () => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('undo_move', { roomCode: room.roomCode, playerId });
+    getGameNetwork().undoMove(room.roomCode, playerId);
   };
 
   const handlePassTurn = () => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('pass_turn', { roomCode: room.roomCode, playerId });
+    getGameNetwork().passTurn(room.roomCode, playerId);
   };
 
   const handleBuyItem = (itemId: ItemId) => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('buy_item', { roomCode: room.roomCode, playerId, itemId });
+    getGameNetwork().buyItem(room.roomCode, playerId, itemId);
   };
 
   const handleSellItem = (itemIndex: number) => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('sell_item', { roomCode: room.roomCode, playerId, itemIndex });
+    getGameNetwork().sellItem(room.roomCode, playerId, itemIndex);
   };
 
   const handleUndoBuyItem = () => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('undo_buy_item', { roomCode: room.roomCode, playerId });
+    getGameNetwork().undoBuyItem(room.roomCode, playerId);
   };
 
   const handleUseItem = (itemId: ItemId) => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('use_item', { roomCode: room.roomCode, playerId, itemId });
+    getGameNetwork().useItem(room.roomCode, playerId, itemId);
   };
 
   const handlePlayAgain = () => {
     if (!room) return;
-    const socket = getSocket();
-    socket.emit('play_again', { roomCode: room.roomCode });
+    getGameNetwork().playAgain(room.roomCode);
   };
 
   // Canvas Tile Click handler
@@ -298,43 +225,25 @@ export default function RiftTacticsPage() {
     (x: number, y: number, unitId?: string, unitType?: 'champion' | 'minion' | 'turret') => {
       if (!room || room.activePlayerId !== playerId) return;
 
-      const socket = getSocket();
+      const network = getGameNetwork();
 
       if (targetMode.type === 'move') {
         sounds.playClick();
-        socket.emit('move_champion', { roomCode: room.roomCode, playerId, targetX: x, targetY: y });
+        network.moveChampion(room.roomCode, playerId, x, y);
         setTargetMode({ type: 'none' });
       } else if (targetMode.type === 'attack') {
         if (unitType && unitId) {
           sounds.playAttack();
-          socket.emit('basic_attack', {
-            roomCode: room.roomCode,
-            playerId,
-            targetType: unitType,
-            targetId: unitId,
-          });
+          network.basicAttack(room.roomCode, playerId, unitType, unitId);
           setTargetMode({ type: 'none' });
         }
       } else if (targetMode.type === 'ability' && targetMode.abilityKey) {
         sounds.playSpell();
-        socket.emit('cast_ability', {
-          roomCode: room.roomCode,
-          playerId,
-          abilityKey: targetMode.abilityKey,
-          targetX: x,
-          targetY: y,
-          targetUnitId: unitId,
-        });
+        network.castAbility(room.roomCode, playerId, targetMode.abilityKey, x, y, unitId);
         setTargetMode({ type: 'none' });
       } else if (targetMode.type === 'spell') {
         sounds.playFlash();
-        socket.emit('use_summoner_spell', {
-          roomCode: room.roomCode,
-          playerId,
-          targetX: x,
-          targetY: y,
-          targetPlayerId: unitType === 'champion' ? unitId : undefined,
-        });
+        network.useSummonerSpell(room.roomCode, playerId, x, y, unitType === 'champion' ? unitId : undefined);
         setTargetMode({ type: 'none' });
       }
     },
@@ -348,7 +257,7 @@ export default function RiftTacticsPage() {
           <span>{connectionError}</span>
           <button
             onClick={() => setConnectionError(null)}
-            className="text-rose-400 hover:text-white transition-colors text-sm font-bold px-1"
+            className="text-rose-400 hover:text-white transition-colors text-sm font-bold px-1 cursor-pointer"
             title="Dismiss"
           >
             ✕
@@ -373,7 +282,7 @@ export default function RiftTacticsPage() {
               clearGameSession();
               setIsLoading(false);
             }}
-            className="px-4 py-1.5 rounded bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-medium border border-zinc-700/60 transition-colors"
+            className="px-4 py-1.5 rounded bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-medium border border-zinc-700/60 transition-colors cursor-pointer"
           >
             Cancel & Return to Title
           </button>
@@ -382,6 +291,8 @@ export default function RiftTacticsPage() {
         <TitleScreen
           isServerConnected={isServerConnected}
           isServerConnecting={isServerConnecting}
+          networkMode={networkMode}
+          serverErrorMessage={serverErrorMessage}
           initialRoomCode={initialRoomCode}
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}

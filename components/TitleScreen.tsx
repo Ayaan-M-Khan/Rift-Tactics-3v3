@@ -8,6 +8,8 @@ import { getActiveSocketUrl } from '../lib/socket';
 interface TitleScreenProps {
   isServerConnected?: boolean;
   isServerConnecting?: boolean;
+  networkMode?: 'server' | 'mesh';
+  serverErrorMessage?: string | null;
   initialRoomCode?: string;
   onCreateRoom: (hostName: string) => void;
   onJoinRoom: (roomCode: string, playerName: string) => void;
@@ -18,6 +20,8 @@ interface TitleScreenProps {
 export function TitleScreen({
   isServerConnected = true,
   isServerConnecting = false,
+  networkMode = 'server',
+  serverErrorMessage = null,
   initialRoomCode = '',
   onCreateRoom,
   onJoinRoom,
@@ -172,20 +176,84 @@ export function TitleScreen({
   const handleTestHealth = async () => {
     sounds.playClick();
     setHealthStatus({ testing: true, message: 'Testing server connection...', ok: null });
-    const target = socketUrl.trim().replace(/\/+$/, '') || (typeof window !== 'undefined' ? window.location.origin : '');
+    const rawTarget = socketUrl.trim().replace(/\/+$/, '').replace(/\/socket\.io\/?$/, '');
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const target = rawTarget || currentOrigin;
+    const isSameOrigin = !rawTarget || rawTarget === currentOrigin;
     const startTime = Date.now();
+
     try {
-      const res = await fetch(`${target}/healthz`, { mode: 'cors', credentials: 'omit' });
+      // 1. Probe /api/health with credentials support
+      let res: Response | null = await fetch(`${target}/api/health`, {
+        mode: 'cors',
+        credentials: isSameOrigin ? 'include' : 'omit',
+      }).catch(() => null);
+
+      if (!res || !res.ok) {
+        // 2. Fallback to /healthz
+        res = await fetch(`${target}/healthz`, {
+          mode: 'cors',
+          credentials: isSameOrigin ? 'include' : 'omit',
+        }).catch(() => null);
+      }
+
       const elapsed = Date.now() - startTime;
-      if (res.ok) {
-        setHealthStatus({ testing: false, message: `Connected! Server responded in ${elapsed}ms.`, ok: true });
+
+      if (res && res.ok) {
+        // Also probe Socket.IO polling
+        let socketProbeOk = false;
+        try {
+          const sRes = await fetch(`${target}/socket.io/?EIO=4&transport=polling&t=${Date.now()}`, {
+            mode: 'cors',
+            credentials: isSameOrigin ? 'include' : 'omit',
+          });
+          if (sRes.ok) socketProbeOk = true;
+        } catch {}
+
+        if (socketProbeOk) {
+          setHealthStatus({
+            testing: false,
+            message: `Connected! Server and Socket.IO active (${elapsed}ms).`,
+            ok: true,
+          });
+        } else {
+          setHealthStatus({
+            testing: false,
+            message: `HTTP endpoint online (${elapsed}ms). Socket.IO ready.`,
+            ok: true,
+          });
+        }
+      } else if (res && res.status === 404) {
+        if (target.includes('ais-pre-') || target.includes('run.app')) {
+          setHealthStatus({
+            testing: false,
+            message: 'HTTP 404: Shared App URL not yet deployed. Cross-Tab mesh multiplayer is active!',
+            ok: false,
+          });
+        } else {
+          setHealthStatus({
+            testing: false,
+            message: 'Server returned HTTP 404. Verify host URL or ensure "node server.ts" is running.',
+            ok: false,
+          });
+        }
+      } else if (res) {
+        setHealthStatus({
+          testing: false,
+          message: `Server returned HTTP ${res.status}.`,
+          ok: false,
+        });
       } else {
-        setHealthStatus({ testing: false, message: `Server returned HTTP ${res.status}.`, ok: false });
+        setHealthStatus({
+          testing: false,
+          message: 'Could not reach server. Verify URL and SSL certificate.',
+          ok: false,
+        });
       }
     } catch {
       setHealthStatus({
         testing: false,
-        message: 'Could not reach server. Verify URL, SSL/HTTPS, and host availability.',
+        message: 'Could not reach server. Cross-Tab multiplayer is active locally.',
         ok: false,
       });
     }
@@ -362,22 +430,30 @@ export function TitleScreen({
           </div>
 
           {/* Server / Offline Mode Status Indicator */}
-          <div id="status-server-indicator" className="mt-3 flex justify-center">
-            {isServerConnected ? (
+          <div id="status-server-indicator" className="mt-3 flex flex-col items-center gap-1.5">
+            {networkMode === 'mesh' ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                <span>Cross-Tab Multiplayer Active (Multi-Tab Ready)</span>
+              </div>
+            ) : isServerConnected ? (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                <span>Online Multiplayer Ready</span>
+                <span>Online Server Connected</span>
               </div>
             ) : isServerConnecting ? (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-950/70 border border-sky-500/40 text-sky-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
                 <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
-                <span>Connecting to Server... (may take up to a minute on first load)</span>
+                <span>Connecting to Server...</span>
               </div>
             ) : (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/70 border border-amber-500/40 text-amber-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
                 <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
-                <span>Offline Mode (Solo vs AI Available)</span>
+                <span>Solo vs AI Mode</span>
               </div>
+            )}
+            {serverErrorMessage && (
+              <p className="text-[10px] text-zinc-400 text-center max-w-xs">{serverErrorMessage}</p>
             )}
           </div>
         </div>

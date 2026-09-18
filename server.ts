@@ -16,19 +16,52 @@ async function bootstrap() {
 
   const server = createServer((req, res) => {
     const parsedUrl = parse(req.url!, true);
-    if (parsedUrl.pathname === '/healthz') {
+    const pathname = parsedUrl.pathname || '';
+
+    // Handle health checks with full CORS support
+    if (
+      pathname === '/healthz' ||
+      pathname === '/healthz/' ||
+      pathname === '/health' ||
+      pathname === '/health/' ||
+      pathname === '/api/health' ||
+      pathname === '/api/health/' ||
+      pathname === '/api/healthz'
+    ) {
       res.writeHead(200, {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
       });
-      res.end(JSON.stringify({ status: 'ok', timestamp: Date.now() }));
+      res.end(JSON.stringify({ status: 'ok', multiplayer: 'ready', timestamp: Date.now() }));
       return;
     }
 
-    // Critical: Do NOT pass /socket.io requests to Next.js handler
-    // Next.js will otherwise intercept polling requests and return 404
-    if (parsedUrl.pathname?.startsWith('/socket.io')) {
+    // Handle CORS preflight for any path
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': req.headers.origin || '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+        'Access-Control-Allow-Credentials': 'true',
+      });
+      res.end();
+      return;
+    }
+
+    // Normalize /socket.io (without trailing slash) so Engine.IO matches it reliably
+    if (pathname === '/socket.io') {
+      res.writeHead(307, {
+        Location: '/socket.io/' + (parsedUrl.search || ''),
+      });
+      res.end();
+      return;
+    }
+
+    // Critical: Do NOT pass /socket.io/ requests to Next.js handler
+    // Engine.IO will intercept and handle them
+    if (pathname.startsWith('/socket.io/')) {
       return;
     }
 

@@ -7,7 +7,7 @@ import { DraftAbility, DraftChampion, DraftRoleFilter, DraftSortMode } from '../
 import { fetchChampions, getChampionsSync } from '../lib/ddragon';
 import { SUMMONER_SPELLS } from '../data/spells';
 import { sounds } from '../lib/soundEngine';
-import { getSocket } from '../lib/socket';
+import { getGameNetwork } from '../lib/gameNetwork';
 import {
   Ban,
   Check,
@@ -72,7 +72,7 @@ export function DraftScreen({
       }
     });
 
-    const socket = getSocket();
+    const network = getGameNetwork();
     const handleRemoteHover = (payload: { playerId: string; championId: string }) => {
       if (payload && payload.playerId) {
         setRemoteHovers((prev) => ({
@@ -82,11 +82,11 @@ export function DraftScreen({
       }
     };
 
-    socket.on('draft_hovered', handleRemoteHover);
+    const unsub = network.onDraftHovered(handleRemoteHover);
 
     return () => {
       mounted = false;
-      socket.off('draft_hovered', handleRemoteHover);
+      unsub();
     };
   }, []);
 
@@ -139,37 +139,20 @@ export function DraftScreen({
     sounds.playClick();
     setSelectedChampionId(champ.id);
 
-    // Notify server of hover
-    const socket = getSocket();
-    socket.emit('draft_select', {
-      roomCode: room.roomCode,
-      playerId: currentPlayerId,
-      championId: champ.id,
-    });
+    // Notify peers of hover
+    getGameNetwork().draftSelect(room.roomCode, currentPlayerId, champ.id);
   };
 
   const handleConfirmBan = () => {
     if (!selectedChampionId || !!myLockedBan) return;
     sounds.playLockIn();
     onLockBan(selectedChampionId);
-    const socket = getSocket();
-    socket.emit('draft_ban', {
-      roomCode: room.roomCode,
-      playerId: currentPlayerId,
-      championId: selectedChampionId,
-    });
   };
 
   const handleConfirmPick = () => {
     if (!selectedChampionId || !isMyTurnToPick || !!myLockedPick) return;
     sounds.playLockIn();
     onLockPick(selectedChampionId);
-    const socket = getSocket();
-    socket.emit('draft_lock', {
-      roomCode: room.roomCode,
-      playerId: currentPlayerId,
-      championId: selectedChampionId,
-    });
   };
 
   const handlePickSpell = (spellId: SummonerSpellId) => {

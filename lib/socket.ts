@@ -2,14 +2,18 @@ import { io, Socket } from 'socket.io-client';
 
 let socketInstance: Socket | null = null;
 
+export const normalizeSocketUrl = (url: string): string => {
+  return url.trim().replace(/\/+$/, '').replace(/\/socket\.io\/?$/, '');
+};
+
 export const getActiveSocketUrl = (): string => {
   if (typeof window !== 'undefined') {
     const custom = window.localStorage.getItem('custom_socket_url');
-    if (custom) return custom;
-    if (process.env.NEXT_PUBLIC_SOCKET_URL) return process.env.NEXT_PUBLIC_SOCKET_URL;
-    return window.location.origin;
+    if (custom) return normalizeSocketUrl(custom);
+    if (process.env.NEXT_PUBLIC_SOCKET_URL) return normalizeSocketUrl(process.env.NEXT_PUBLIC_SOCKET_URL);
+    return normalizeSocketUrl(window.location.origin);
   }
-  return process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
+  return process.env.NEXT_PUBLIC_SOCKET_URL ? normalizeSocketUrl(process.env.NEXT_PUBLIC_SOCKET_URL) : 'http://localhost:3000';
 };
 
 export const getSocket = (): Socket => {
@@ -19,21 +23,22 @@ export const getSocket = (): Socket => {
       const urlParams = new URLSearchParams(window.location.search);
       const queryServer = urlParams.get('server');
       if (queryServer) {
-        customSocketUrl = queryServer.trim().replace(/\/+$/, '');
+        customSocketUrl = normalizeSocketUrl(queryServer);
         try {
           window.localStorage.setItem('custom_socket_url', customSocketUrl);
         } catch {}
       } else {
         try {
-          customSocketUrl = window.localStorage.getItem('custom_socket_url');
+          const stored = window.localStorage.getItem('custom_socket_url');
+          if (stored) customSocketUrl = normalizeSocketUrl(stored);
         } catch {}
       }
     }
 
     const socketUrl =
       customSocketUrl ||
-      process.env.NEXT_PUBLIC_SOCKET_URL ||
-      (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+      (process.env.NEXT_PUBLIC_SOCKET_URL ? normalizeSocketUrl(process.env.NEXT_PUBLIC_SOCKET_URL) : '') ||
+      (typeof window !== 'undefined' ? normalizeSocketUrl(window.location.origin) : 'http://localhost:3000');
 
     socketInstance = io(socketUrl, {
       autoConnect: true,
@@ -42,7 +47,7 @@ export const getSocket = (): Socket => {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       randomizationFactor: 0.5,
-      timeout: 20000,
+      timeout: 15000,
       transports: ['polling', 'websocket'],
       upgrade: true,
       withCredentials: true,

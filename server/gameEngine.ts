@@ -166,7 +166,7 @@ export class GameEngine {
 
   public reconnectPlayer(
     sessionToken: string,
-    newSocketId: string
+    newSocketId: string = 'local'
   ): { success: boolean; room?: GameRoomState; player?: LobbyPlayer } {
     const session = this.playerSessions.get(sessionToken);
     if (!session) return { success: false };
