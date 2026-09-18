@@ -43,15 +43,23 @@ class GameNetworkClient {
     }
   }
 
+  private currentStatus: NetworkStatus = {
+    connected: false,
+    connecting: true,
+    mode: 'server',
+    serverUrl: '',
+    errorMessage: null,
+  };
+
   private notifyStatus() {
-    const status: NetworkStatus = {
+    this.currentStatus = {
       connected: this.isConnected,
       connecting: this.isConnecting,
       mode: this.currentMode,
       serverUrl: getActiveSocketUrl(),
       errorMessage: this.errorMessage,
     };
-    this.statusListeners.forEach((cb) => cb(status));
+    this.statusListeners.forEach((cb) => cb(this.currentStatus));
   }
 
   private initBroadcastChannel() {
@@ -93,15 +101,12 @@ class GameNetworkClient {
   private initSocket() {
     this.socket = getSocket();
 
-    const socketTimeout = setTimeout(() => {
-      if (!this.socket?.connected) {
-        console.log('[Network] Server connection slow/unreachable. Activating local cross-tab mesh.');
-        this.enableMeshFallback('Server unreachable or returned HTTP 404. Cross-tab mesh multiplayer active.');
-      }
-    }, 5000);
+    // Always start in multiplayer server mode
+    this.currentMode = 'server';
+    this.isConnecting = !this.socket.connected;
+    this.isConnected = this.socket.connected;
 
     this.socket.on('connect', () => {
-      clearTimeout(socketTimeout);
       this.isConnected = true;
       this.isConnecting = false;
       this.currentMode = 'server';
@@ -112,21 +117,23 @@ class GameNetworkClient {
 
     this.socket.on('connect_error', (err: any) => {
       const errMsg = err?.message || String(err);
-      const is404 = errMsg.includes('404') || err?.description === 404;
       console.warn('[Network] Socket connect error:', errMsg);
 
-      this.isConnecting = false;
-      this.enableMeshFallback(
-        is404
-          ? 'Server returned HTTP 404. Cross-tab multiplayer active.'
-          : 'Unable to reach online server. Cross-tab multiplayer active.'
-      );
+      // Never drop to offline mode automatically on connect_error; keep reconnecting in multiplayer mode
+      this.isConnected = false;
+      this.isConnecting = true;
+      this.currentMode = 'server';
+      this.errorMessage = 'Connecting to multiplayer server...';
+      this.notifyStatus();
     });
 
     this.socket.on('disconnect', (reason) => {
       console.log('[Network] Socket disconnected:', reason);
       this.isConnected = false;
-      this.enableMeshFallback('Disconnected from server. Cross-tab multiplayer active.');
+      this.isConnecting = true;
+      this.currentMode = 'server';
+      this.errorMessage = 'Reconnecting to multiplayer server...';
+      this.notifyStatus();
     });
 
     this.socket.on('room_updated', (room: GameRoomState) => {
@@ -140,16 +147,67 @@ class GameNetworkClient {
     });
 
     if (this.socket.connected) {
-      clearTimeout(socketTimeout);
       this.isConnected = true;
       this.isConnecting = false;
       this.currentMode = 'server';
       this.notifyStatus();
+    } else {
+      // Ensure socket begins connecting immediately
+      this.socket.connect();
     }
   }
 
+  public ensureSocketConnected(timeoutMs = 5000): Promise<boolean> {
+    if (this.socket?.connected) {
+      this.isConnected = true;
+      this.isConnecting = false;
+      this.currentMode = 'server';
+      return Promise.resolve(true);
+    }
+
+    if (!this.socket) {
+      this.initSocket();
+    }
+
+    this.isConnecting = true;
+    this.currentMode = 'server';
+    this.notifyStatus();
+    this.socket?.connect();
+
+    return new Promise((resolve) => {
+      if (!this.socket) {
+        resolve(false);
+        return;
+      }
+      if (this.socket.connected) {
+        this.isConnected = true;
+        this.isConnecting = false;
+        resolve(true);
+        return;
+      }
+
+      let timer: NodeJS.Timeout | null = null;
+      const onConnect = () => {
+        if (timer) clearTimeout(timer);
+        this.socket?.off('connect', onConnect);
+        this.isConnected = true;
+        this.isConnecting = false;
+        this.currentMode = 'server';
+        this.notifyStatus();
+        resolve(true);
+      };
+
+      timer = setTimeout(() => {
+        this.socket?.off('connect', onConnect);
+        resolve(this.socket?.connected || false);
+      }, timeoutMs);
+
+      this.socket.once('connect', onConnect);
+    });
+  }
+
   private enableMeshFallback(reason: string) {
-    this.isConnected = true; // Connected via mesh!
+    this.isConnected = true;
     this.isConnecting = false;
     this.currentMode = 'mesh';
     this.errorMessage = reason;
@@ -275,17 +333,15 @@ class GameNetworkClient {
   }
 
   public getStatus(): NetworkStatus {
-    return {
-      connected: this.isConnected,
-      connecting: this.isConnecting,
-      mode: this.currentMode,
-      serverUrl: getActiveSocketUrl(),
-      errorMessage: this.errorMessage,
-    };
+    return this.currentStatus;
   }
 
-  public createRoom(hostName: string, callback: (res: { room: GameRoomState; playerId: string; sessionToken: string }) => void) {
-    if (this.currentMode === 'server' && this.socket?.connected) {
+  public async createRoom(
+    hostName: string,
+    callback: (res: { room: GameRoomState; playerId: string; sessionToken: string; error?: string }) => void
+  ) {
+    const isReady = await this.ensureSocketConnected(4000);
+    if (isReady && this.socket?.connected) {
       this.socket.emit('create_room', { hostName }, (res: any) => {
         if (res && res.room) {
           this.activeRoomCode = res.room.roomCode;
@@ -296,7 +352,7 @@ class GameNetworkClient {
       return;
     }
 
-    // Host with local engine
+    // Host with local engine if server is truly unreachable
     this.localEngine = new GameEngine((room) => {
       this.roomUpdatedListeners.forEach((cb) => cb(room));
       this.broadcastToMesh({ type: 'room_updated', room });
@@ -313,13 +369,15 @@ class GameNetworkClient {
     callback(result);
   }
 
-  public joinRoom(
+  public async joinRoom(
     roomCode: string,
     playerName: string,
     callback: (res: { success: boolean; error?: string; room?: GameRoomState; playerId?: string; sessionToken?: string }) => void
   ) {
-    if (this.currentMode === 'server' && this.socket?.connected) {
-      this.socket.emit('join_room', { roomCode, playerName }, (res: any) => {
+    const normalizedCode = (roomCode || '').trim().toUpperCase();
+    const isReady = await this.ensureSocketConnected(4000);
+    if (isReady && this.socket?.connected) {
+      this.socket.emit('join_room', { roomCode: normalizedCode, playerName }, (res: any) => {
         if (res?.success && res.room) {
           this.activeRoomCode = res.room.roomCode;
           this.activePlayerId = res.playerId;
@@ -342,7 +400,7 @@ class GameNetworkClient {
     this.broadcastToMesh({
       type: 'peer_action',
       action: 'join_room',
-      payload: { roomCode, playerName },
+      payload: { roomCode: normalizedCode, playerName },
       requestId,
     });
 
@@ -350,17 +408,18 @@ class GameNetworkClient {
     setTimeout(() => {
       if (this.pendingCallbacks.has(requestId)) {
         this.pendingCallbacks.delete(requestId);
-        callback({ success: false, error: 'Room host not responding on local network/tabs.' });
+        callback({ success: false, error: 'Could not connect to multiplayer room. Please verify the room code.' });
       }
     }, 4000);
   }
 
-  public reconnectSession(
+  public async reconnectSession(
     sessionToken: string,
     roomCode: string,
     callback: (res: { success: boolean; room?: GameRoomState; player?: { id: string } }) => void
   ) {
-    if (this.currentMode === 'server' && this.socket?.connected) {
+    const isReady = await this.ensureSocketConnected(3000);
+    if (isReady && this.socket?.connected) {
       this.socket.emit('reconnect_session', { sessionToken, roomCode }, callback);
       return;
     }
@@ -388,10 +447,17 @@ class GameNetworkClient {
     }, 3000);
   }
 
-  public emitAction(action: string, payload: any, callback?: (res: any) => void) {
-    if (this.currentMode === 'server' && this.socket?.connected) {
-      this.socket.emit(action, payload, callback);
-      return;
+  public async emitAction(action: string, payload: any, callback?: (res: any) => void) {
+    if (this.currentMode === 'server') {
+      if (this.socket?.connected) {
+        this.socket.emit(action, payload, callback);
+        return;
+      }
+      const isReady = await this.ensureSocketConnected(2500);
+      if (isReady && this.socket?.connected) {
+        this.socket.emit(action, payload, callback);
+        return;
+      }
     }
 
     if (this.localEngine) {

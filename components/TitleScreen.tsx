@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { sounds } from '../lib/soundEngine';
 import { Volume2, VolumeX, Shield, Swords, Sparkles, Users, Server, Check, AlertCircle, RefreshCw, Globe, HelpCircle, X } from 'lucide-react';
-import { getActiveSocketUrl } from '../lib/socket';
+import { getActiveSocketUrl, getSocket } from '../lib/socket';
+
+const emptySubscribe = () => () => {};
 
 interface TitleScreenProps {
   isServerConnected?: boolean;
@@ -29,10 +31,27 @@ export function TitleScreen({
   onSaveSocketUrl,
 }: TitleScreenProps) {
   const [playerName, setPlayerName] = useState('Summoner');
-  const [roomCode, setRoomCode] = useState(initialRoomCode || '');
-  const [isJoining, setIsJoining] = useState(!!initialRoomCode);
+  const [userRoomCode, setUserRoomCode] = useState<string | null>(null);
+  const [userIsJoining, setUserIsJoining] = useState<boolean | null>(null);
   const [isMuted, setIsMuted] = useState(false);
-  const [socketUrl, setSocketUrl] = useState(() => (typeof window !== 'undefined' ? window.localStorage.getItem('custom_socket_url') || '' : ''));
+
+  const storedSocketUrl = useSyncExternalStore(
+    emptySubscribe,
+    () => {
+      try {
+        return window.localStorage.getItem('custom_socket_url') || '';
+      } catch {
+        return '';
+      }
+    },
+    () => ''
+  );
+  const [userSocketUrl, setUserSocketUrl] = useState<string | null>(null);
+  const socketUrl = userSocketUrl !== null ? userSocketUrl : storedSocketUrl;
+
+  const roomCode = userRoomCode !== null ? userRoomCode : initialRoomCode;
+  const isJoining = userIsJoining !== null ? userIsJoining : !!initialRoomCode;
+
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [showDeployGuide, setShowDeployGuide] = useState(false);
   const [healthStatus, setHealthStatus] = useState<{ testing: boolean; message: string | null; ok: boolean | null }>({
@@ -261,7 +280,7 @@ export function TitleScreen({
 
   const handleResetSocketUrl = () => {
     sounds.playClick();
-    setSocketUrl('');
+    setUserSocketUrl('');
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('custom_socket_url');
     }
@@ -330,7 +349,7 @@ export function TitleScreen({
           <input
             id="input-socket-url"
             value={socketUrl}
-            onChange={(e) => setSocketUrl(e.target.value)}
+            onChange={(e) => setUserSocketUrl(e.target.value)}
             placeholder="https://your-app.onrender.com"
             className="w-full px-3 py-2 bg-[#050c12] border border-[#785a28] rounded-md text-[#f0e6d2] text-xs font-mono focus:outline-none focus:border-[#0ac8b9]"
           />
@@ -431,25 +450,31 @@ export function TitleScreen({
 
           {/* Server / Offline Mode Status Indicator */}
           <div id="status-server-indicator" className="mt-3 flex flex-col items-center gap-1.5">
-            {networkMode === 'mesh' ? (
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                <span>Cross-Tab Multiplayer Active (Multi-Tab Ready)</span>
-              </div>
-            ) : isServerConnected ? (
+            {isServerConnected ? (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                <span>Online Server Connected</span>
+                <span>Multiplayer Server Connected</span>
               </div>
             ) : isServerConnecting ? (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-950/70 border border-sky-500/40 text-sky-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
                 <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
-                <span>Connecting to Server...</span>
+                <span>Connecting to Multiplayer Server...</span>
               </div>
             ) : (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/70 border border-amber-500/40 text-amber-300 text-[11px] font-medium tracking-wider shadow-sm backdrop-blur-sm">
                 <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
-                <span>Solo vs AI Mode</span>
+                <span>Connecting to Server...</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      getSocket().connect();
+                    }
+                  }}
+                  className="ml-1 text-[10px] text-amber-200 underline hover:text-white"
+                >
+                  Retry
+                </button>
               </div>
             )}
             {serverErrorMessage && (
@@ -503,7 +528,7 @@ export function TitleScreen({
                 id="btn-show-join"
                 onClick={() => {
                   sounds.playClick();
-                  setIsJoining(true);
+                  setUserIsJoining(true);
                 }}
                 className="w-full py-2.5 px-4 rounded-md font-semibold text-xs tracking-wider uppercase border border-[#c8aa6e]/40 text-[#c8aa6e] hover:bg-[#c8aa6e]/10 hover:border-[#c8aa6e] transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
@@ -522,7 +547,7 @@ export function TitleScreen({
                   type="text"
                   maxLength={6}
                   value={roomCode}
-                  onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                  onChange={(e) => setUserRoomCode(e.target.value.toUpperCase())}
                   placeholder="e.g. RIFT88"
                   className="w-full px-4 py-2.5 bg-[#050c12] border border-[#785a28] rounded-md text-[#0ac8b9] font-mono text-center tracking-widest text-lg font-bold placeholder-zinc-600 focus:outline-none focus:border-[#0ac8b9] transition-all"
                   autoFocus
@@ -535,7 +560,7 @@ export function TitleScreen({
                   id="btn-back-join"
                   onClick={() => {
                     sounds.playClick();
-                    setIsJoining(false);
+                    setUserIsJoining(false);
                   }}
                   className="w-1/3 py-2.5 px-3 rounded-md font-semibold text-xs tracking-wider uppercase border border-zinc-700 text-zinc-400 hover:text-white transition-all cursor-pointer"
                 >

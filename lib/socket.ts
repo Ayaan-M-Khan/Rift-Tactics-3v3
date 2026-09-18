@@ -9,7 +9,9 @@ export const normalizeSocketUrl = (url: string): string => {
 export const getActiveSocketUrl = (): string => {
   if (typeof window !== 'undefined') {
     const custom = window.localStorage.getItem('custom_socket_url');
-    if (custom) return normalizeSocketUrl(custom);
+    if (custom && custom.trim() && !custom.includes('your-app.onrender.com')) {
+      return normalizeSocketUrl(custom);
+    }
     if (process.env.NEXT_PUBLIC_SOCKET_URL) return normalizeSocketUrl(process.env.NEXT_PUBLIC_SOCKET_URL);
     return normalizeSocketUrl(window.location.origin);
   }
@@ -30,7 +32,11 @@ export const getSocket = (): Socket => {
       } else {
         try {
           const stored = window.localStorage.getItem('custom_socket_url');
-          if (stored) customSocketUrl = normalizeSocketUrl(stored);
+          if (stored && !stored.includes('your-app.onrender.com')) {
+            customSocketUrl = normalizeSocketUrl(stored);
+          } else {
+            window.localStorage.removeItem('custom_socket_url');
+          }
         } catch {}
       }
     }
@@ -44,11 +50,11 @@ export const getSocket = (): Socket => {
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      randomizationFactor: 0.5,
-      timeout: 15000,
-      transports: ['polling', 'websocket'],
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 3000,
+      randomizationFactor: 0.2,
+      timeout: 12000,
+      transports: ['websocket', 'polling'],
       upgrade: true,
       withCredentials: true,
     });
@@ -58,6 +64,17 @@ export const getSocket = (): Socket => {
         if (socketInstance && !socketInstance.connected) {
           console.log('[Network] Network online. Reconnecting socket...');
           socketInstance.connect();
+        }
+      });
+
+      // If a custom socket URL was used and fails, immediately fall back to the live origin
+      socketInstance.on('connect_error', () => {
+        if (customSocketUrl && customSocketUrl !== normalizeSocketUrl(window.location.origin)) {
+          console.warn('[Network] Custom socket URL unreachable, reverting to origin:', window.location.origin);
+          try {
+            window.localStorage.removeItem('custom_socket_url');
+          } catch {}
+          reconnectWithUrl(window.location.origin);
         }
       });
     }
@@ -73,7 +90,7 @@ export const reconnectWithUrl = (newUrl?: string): Socket => {
   }
   if (typeof window !== 'undefined') {
     try {
-      if (newUrl && newUrl.trim()) {
+      if (newUrl && newUrl.trim() && !newUrl.includes('your-app.onrender.com')) {
         window.localStorage.setItem('custom_socket_url', newUrl.trim().replace(/\/+$/, ''));
       } else {
         window.localStorage.removeItem('custom_socket_url');
@@ -96,11 +113,14 @@ export function saveSession(session: SavedSession) {
   if (typeof window !== 'undefined') {
     try {
       const serialized = JSON.stringify(session);
-      localStorage.setItem(SESSION_KEY, serialized);
-      localStorage.setItem('sessionToken', session.sessionToken);
-      localStorage.setItem('roomCode', session.roomCode);
-      localStorage.setItem('playerId', session.playerId);
-      localStorage.setItem('playerName', session.playerName);
+      // Clean up legacy cross-tab storage to prevent tab-session collision
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem('sessionToken');
+      localStorage.removeItem('roomCode');
+      localStorage.removeItem('playerId');
+      localStorage.removeItem('playerName');
+
+      // Scoped strictly per-tab so new tabs can join independently
       sessionStorage.setItem(SESSION_KEY, serialized);
     } catch {
       // ignore
@@ -111,16 +131,16 @@ export function saveSession(session: SavedSession) {
 export function loadSession(): SavedSession | null {
   if (typeof window !== 'undefined') {
     try {
-      const data = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY);
+      // Clean up any legacy localStorage so another tab's session never leaks
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem('sessionToken');
+      localStorage.removeItem('roomCode');
+      localStorage.removeItem('playerId');
+      localStorage.removeItem('playerName');
+
+      const data = sessionStorage.getItem(SESSION_KEY);
       if (data) {
         return JSON.parse(data);
-      }
-      const token = localStorage.getItem('sessionToken');
-      const roomCode = localStorage.getItem('roomCode');
-      const playerId = localStorage.getItem('playerId');
-      const playerName = localStorage.getItem('playerName') || 'Summoner';
-      if (token && roomCode && playerId) {
-        return { sessionToken: token, roomCode, playerId, playerName };
       }
     } catch {
       // ignore

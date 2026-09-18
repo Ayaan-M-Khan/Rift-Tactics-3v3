@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useSyncExternalStore } from 'react';
 import { GameRoomState, ItemId, Role, SummonerSpellId, Team } from '../types/game';
 import { loadSession, saveSession, clearGameSession, reconnectWithUrl } from '../lib/socket';
-import { getGameNetwork, NetworkMode } from '../lib/gameNetwork';
+import { getGameNetwork, NetworkMode, NetworkStatus } from '../lib/gameNetwork';
 import { TitleScreen } from '../components/TitleScreen';
 import { LobbyScreen } from '../components/LobbyScreen';
 import { DraftScreen } from '../components/DraftScreen';
@@ -11,49 +11,67 @@ import { GameCanvas, TargetSelectionMode } from '../components/GameCanvas';
 import { CombatHUD } from '../components/CombatHUD';
 import { sounds } from '../lib/soundEngine';
 
+const emptySubscribe = () => () => {};
+
 export default function RiftTacticsPage() {
   const [room, setRoom] = useState<GameRoomState | null>(null);
   const [playerId, setPlayerId] = useState<string>('');
   const [targetMode, setTargetMode] = useState<TargetSelectionMode>({ type: 'none' });
   const [spectatorTargetId, setSpectatorTargetId] = useState<string | undefined>(undefined);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [isServerConnected, setIsServerConnected] = useState<boolean>(true);
-  const [isServerConnecting, setIsServerConnecting] = useState<boolean>(false);
-  const [networkMode, setNetworkMode] = useState<NetworkMode>('server');
-  const [serverErrorMessage, setServerErrorMessage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = loadSession();
-      return !!(saved && saved.sessionToken);
-    }
-    return false;
-  });
-  const [initialRoomCode] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
+
+  const defaultNetworkStatus: NetworkStatus = {
+    connected: false,
+    connecting: true,
+    mode: 'server',
+    serverUrl: '',
+    errorMessage: null,
+  };
+
+  const networkStatus = useSyncExternalStore(
+    (callback) => {
+      const network = getGameNetwork();
+      return network.onStatusChange(callback);
+    },
+    () => getGameNetwork().getStatus(),
+    () => defaultNetworkStatus
+  );
+
+  const isServerConnected = networkStatus.connected;
+  const isServerConnecting = networkStatus.connecting;
+  const networkMode = networkStatus.mode;
+  const serverErrorMessage = networkStatus.errorMessage;
+
+  const isHydrated = useSyncExternalStore(emptySubscribe, () => true, () => false);
+  const initialRoomCode = useSyncExternalStore(
+    emptySubscribe,
+    () => {
+      if (typeof window === 'undefined') return '';
       const params = new URLSearchParams(window.location.search);
       const roomParam = params.get('room') || params.get('join');
-      if (roomParam) {
-        return roomParam.trim().toUpperCase();
-      }
-    }
-    return '';
-  });
+      return roomParam ? roomParam.trim().toUpperCase() : '';
+    },
+    () => ''
+  );
+  const hasSavedSession = useSyncExternalStore(
+    emptySubscribe,
+    () => {
+      const saved = loadSession();
+      return !!(saved && saved.sessionToken);
+    },
+    () => false
+  );
+  const [reconnectFinished, setReconnectFinished] = useState(false);
+  const isLoading = isHydrated && hasSavedSession && !reconnectFinished && !room;
 
   // Initialize unified network client (Socket.IO + Local Cross-Tab Mesh)
   useEffect(() => {
     const network = getGameNetwork();
     const savedSession = loadSession();
 
-    const unsubStatus = network.onStatusChange((status) => {
-      setIsServerConnected(status.connected);
-      setIsServerConnecting(status.connecting);
-      setNetworkMode(status.mode);
-      setServerErrorMessage(status.errorMessage);
-    });
-
     const unsubRoom = network.onRoomUpdated((updatedRoom: GameRoomState) => {
       setRoom(updatedRoom);
-      setIsLoading(false);
+      setReconnectFinished(true);
     });
 
     // Auto reconnect if session saved
@@ -66,13 +84,12 @@ export default function RiftTacticsPage() {
             setRoom(res.room);
             setPlayerId(res.player.id);
           }
-          setIsLoading(false);
+          setReconnectFinished(true);
         }
       );
     }
 
     return () => {
-      unsubStatus();
       unsubRoom();
     };
   }, []);
@@ -81,8 +98,8 @@ export default function RiftTacticsPage() {
   const handleCreateRoom = (hostName: string) => {
     setConnectionError(null);
     const network = getGameNetwork();
-    network.createRoom(hostName, (res: { room: GameRoomState; playerId: string; sessionToken: string }) => {
-      if (res && res.room) {
+    network.createRoom(hostName, (res: { room?: GameRoomState; playerId?: string; sessionToken?: string; error?: string }) => {
+      if (res && res.room && res.playerId && res.sessionToken) {
         setRoom(res.room);
         setPlayerId(res.playerId);
         saveSession({
@@ -91,6 +108,8 @@ export default function RiftTacticsPage() {
           sessionToken: res.sessionToken,
           playerName: hostName,
         });
+      } else if (res?.error) {
+        setConnectionError(res.error);
       }
     });
   };
@@ -265,7 +284,19 @@ export default function RiftTacticsPage() {
         </div>
       )}
 
-      {isLoading ? (
+      {!isHydrated ? (
+        <TitleScreen
+          isServerConnected={isServerConnected}
+          isServerConnecting={isServerConnecting}
+          networkMode={networkMode}
+          serverErrorMessage={serverErrorMessage}
+          initialRoomCode=""
+          onCreateRoom={handleCreateRoom}
+          onJoinRoom={handleJoinRoom}
+          onQuickSolo={handleQuickSolo}
+          onSaveSocketUrl={handleSaveSocketUrl}
+        />
+      ) : isLoading ? (
         <div className="w-full h-full flex flex-col items-center justify-center bg-[#050b10] px-4">
           <div className="relative flex items-center justify-center mb-6">
             <div className="w-16 h-16 rounded-full border-2 border-[#0ac8b9]/30 border-t-[#0ac8b9] animate-spin" />
@@ -280,7 +311,7 @@ export default function RiftTacticsPage() {
           <button
             onClick={() => {
               clearGameSession();
-              setIsLoading(false);
+              setReconnectFinished(true);
             }}
             className="px-4 py-1.5 rounded bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-medium border border-zinc-700/60 transition-colors cursor-pointer"
           >

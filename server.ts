@@ -50,18 +50,9 @@ async function bootstrap() {
       return;
     }
 
-    // Normalize /socket.io (without trailing slash) so Engine.IO matches it reliably
-    if (pathname === '/socket.io') {
-      res.writeHead(307, {
-        Location: '/socket.io/' + (parsedUrl.search || ''),
-      });
-      res.end();
-      return;
-    }
-
-    // Critical: Do NOT pass /socket.io/ requests to Next.js handler
-    // Engine.IO will intercept and handle them
-    if (pathname.startsWith('/socket.io/')) {
+    // Critical: Do NOT pass /socket.io requests to Next.js handler
+    // Engine.IO will intercept and handle them directly
+    if (pathname === '/socket.io' || pathname.startsWith('/socket.io/')) {
       return;
     }
 
