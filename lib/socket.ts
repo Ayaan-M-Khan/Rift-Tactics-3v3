@@ -2,12 +2,34 @@ import { io, Socket } from 'socket.io-client';
 
 let socketInstance: Socket | null = null;
 
+export const getActiveSocketUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    const custom = window.localStorage.getItem('custom_socket_url');
+    if (custom) return custom;
+    if (process.env.NEXT_PUBLIC_SOCKET_URL) return process.env.NEXT_PUBLIC_SOCKET_URL;
+    return window.location.origin;
+  }
+  return process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
+};
+
 export const getSocket = (): Socket => {
   if (!socketInstance) {
     let customSocketUrl: string | null = null;
     if (typeof window !== 'undefined') {
-      customSocketUrl = window.localStorage.getItem('custom_socket_url');
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryServer = urlParams.get('server');
+      if (queryServer) {
+        customSocketUrl = queryServer.trim().replace(/\/+$/, '');
+        try {
+          window.localStorage.setItem('custom_socket_url', customSocketUrl);
+        } catch {}
+      } else {
+        try {
+          customSocketUrl = window.localStorage.getItem('custom_socket_url');
+        } catch {}
+      }
     }
+
     const socketUrl =
       customSocketUrl ||
       process.env.NEXT_PUBLIC_SOCKET_URL ||
@@ -21,21 +43,39 @@ export const getSocket = (): Socket => {
       reconnectionDelayMax: 5000,
       randomizationFactor: 0.5,
       timeout: 20000,
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       upgrade: true,
-      withCredentials: false,
+      withCredentials: true,
     });
 
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
         if (socketInstance && !socketInstance.connected) {
-          console.log('[Network] Wi-Fi restored. Reconnecting socket...');
+          console.log('[Network] Network online. Reconnecting socket...');
           socketInstance.connect();
         }
       });
     }
   }
   return socketInstance;
+};
+
+export const reconnectWithUrl = (newUrl?: string): Socket => {
+  if (socketInstance) {
+    socketInstance.removeAllListeners();
+    socketInstance.disconnect();
+    socketInstance = null;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      if (newUrl && newUrl.trim()) {
+        window.localStorage.setItem('custom_socket_url', newUrl.trim().replace(/\/+$/, ''));
+      } else {
+        window.localStorage.removeItem('custom_socket_url');
+      }
+    } catch {}
+  }
+  return getSocket();
 };
 
 export interface SavedSession {

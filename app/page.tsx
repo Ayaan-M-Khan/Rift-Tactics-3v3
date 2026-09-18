@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { GameRoomState, ItemId, Role, SummonerSpellId, Team } from '../types/game';
-import { getSocket, loadSession, saveSession, clearGameSession } from '../lib/socket';
+import { getSocket, loadSession, saveSession, clearGameSession, reconnectWithUrl } from '../lib/socket';
 import { TitleScreen } from '../components/TitleScreen';
 import { LobbyScreen } from '../components/LobbyScreen';
 import { DraftScreen } from '../components/DraftScreen';
@@ -19,6 +19,16 @@ export default function RiftTacticsPage() {
   const [isServerConnected, setIsServerConnected] = useState<boolean>(false);
   const [isServerConnecting, setIsServerConnecting] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [initialRoomCode] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room') || params.get('join');
+      if (roomParam) {
+        return roomParam.trim().toUpperCase();
+      }
+    }
+    return '';
+  });
 
   // Initialize socket and attempt session restore
   useEffect(() => {
@@ -191,7 +201,8 @@ export default function RiftTacticsPage() {
     });
   };
 
-  const handleSaveSocketUrl = () => {
+  const handleSaveSocketUrl = (newUrl: string) => {
+    reconnectWithUrl(newUrl);
     window.location.reload();
   };
 
@@ -371,6 +382,7 @@ export default function RiftTacticsPage() {
         <TitleScreen
           isServerConnected={isServerConnected}
           isServerConnecting={isServerConnecting}
+          initialRoomCode={initialRoomCode}
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}
           onQuickSolo={handleQuickSolo}

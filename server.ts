@@ -17,20 +17,35 @@ async function bootstrap() {
   const server = createServer((req, res) => {
     const parsedUrl = parse(req.url!, true);
     if (parsedUrl.pathname === '/healthz') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok' }));
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      });
+      res.end(JSON.stringify({ status: 'ok', timestamp: Date.now() }));
       return;
     }
+
+    // Critical: Do NOT pass /socket.io requests to Next.js handler
+    // Next.js will otherwise intercept polling requests and return 404
+    if (parsedUrl.pathname?.startsWith('/socket.io')) {
+      return;
+    }
+
     handle(req, res, parsedUrl);
   });
 
   const io = new SocketIOServer(server, {
     cors: {
-      origin: '*',
+      origin: (origin, callback) => {
+        // Echo origin to support credentials: true across any host, port, or external domain
+        callback(null, true);
+      },
       methods: ['GET', 'POST'],
-      credentials: false,
+      credentials: true,
     },
-    transports: ['websocket', 'polling'],
+    transports: ['polling', 'websocket'],
+    allowEIO3: true,
     pingInterval: 10000,
     pingTimeout: 30000,
     upgradeTimeout: 30000,

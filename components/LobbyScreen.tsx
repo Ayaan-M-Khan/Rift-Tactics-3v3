@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { GameRoomState, LobbyPlayer, Role, Team } from '../types/game';
 import { sounds } from '../lib/soundEngine';
-import { Copy, Check, Swords, Bot, UserX, Shield, Crown } from 'lucide-react';
+import { Copy, Check, Swords, Bot, UserX, Shield, Crown, Share2 } from 'lucide-react';
 
 interface LobbyScreenProps {
   room: GameRoomState;
@@ -23,6 +23,7 @@ export function LobbyScreen({
   onStartDraft,
 }: LobbyScreenProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const me = room.players.find((p) => p.id === currentPlayerId);
   const isHost = me?.isHost || room.hostPlayerId === currentPlayerId;
@@ -41,6 +42,20 @@ export function LobbyScreen({
     navigator.clipboard.writeText(room.roomCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyLink = () => {
+    sounds.playClick();
+    if (typeof window !== 'undefined') {
+      const custom = window.localStorage.getItem('custom_socket_url');
+      let url = `${window.location.origin}/?room=${room.roomCode}`;
+      if (custom) {
+        url += `&server=${encodeURIComponent(custom)}`;
+      }
+      navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
   };
 
   const handleSelectRole = (newRole: Role) => {
@@ -137,7 +152,7 @@ export function LobbyScreen({
         </div>
 
         {/* Room Code Card */}
-        <div className="flex items-center gap-3 bg-[#09141d] border border-[#c8aa6e]/50 px-4 py-2 rounded-lg shadow-md">
+        <div className="flex items-center gap-2 sm:gap-3 bg-[#09141d] border border-[#c8aa6e]/50 px-3 sm:px-4 py-2 rounded-lg shadow-md">
           <div className="text-right">
             <span className="text-[10px] uppercase tracking-widest text-[#c8aa6e]/70 block">Room Code</span>
             <span className="text-lg font-mono font-black text-[#0ac8b9] tracking-widest">{room.roomCode}</span>
@@ -149,6 +164,15 @@ export function LobbyScreen({
             title="Copy room code"
           >
             {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+          </button>
+          <button
+            id="btn-copy-invite-link"
+            onClick={handleCopyLink}
+            className="p-2 rounded border border-[#785a28] hover:border-[#0ac8b9] bg-[#050c12] text-[#c8aa6e] hover:text-[#0ac8b9] transition-all cursor-pointer flex items-center gap-1 text-xs"
+            title="Copy direct invite link"
+          >
+            {copiedLink ? <Check className="w-4 h-4 text-green-400" /> : <Share2 className="w-4 h-4" />}
+            <span className="hidden sm:inline font-semibold text-[11px]">Invite Link</span>
           </button>
         </div>
       </div>

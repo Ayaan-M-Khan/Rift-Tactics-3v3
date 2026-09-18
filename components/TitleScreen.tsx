@@ -2,11 +2,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { sounds } from '../lib/soundEngine';
-import { Volume2, VolumeX, Shield, Swords, Sparkles, Users, Server } from 'lucide-react';
+import { Volume2, VolumeX, Shield, Swords, Sparkles, Users, Server, Check, AlertCircle, RefreshCw, Globe, HelpCircle, X } from 'lucide-react';
+import { getActiveSocketUrl } from '../lib/socket';
 
 interface TitleScreenProps {
   isServerConnected?: boolean;
   isServerConnecting?: boolean;
+  initialRoomCode?: string;
   onCreateRoom: (hostName: string) => void;
   onJoinRoom: (roomCode: string, playerName: string) => void;
   onQuickSolo: (hostName: string) => void;
@@ -16,17 +18,24 @@ interface TitleScreenProps {
 export function TitleScreen({
   isServerConnected = true,
   isServerConnecting = false,
+  initialRoomCode = '',
   onCreateRoom,
   onJoinRoom,
   onQuickSolo,
   onSaveSocketUrl,
 }: TitleScreenProps) {
   const [playerName, setPlayerName] = useState('Summoner');
-  const [roomCode, setRoomCode] = useState('');
-  const [isJoining, setIsJoining] = useState(false);
+  const [roomCode, setRoomCode] = useState(initialRoomCode || '');
+  const [isJoining, setIsJoining] = useState(!!initialRoomCode);
   const [isMuted, setIsMuted] = useState(false);
   const [socketUrl, setSocketUrl] = useState(() => (typeof window !== 'undefined' ? window.localStorage.getItem('custom_socket_url') || '' : ''));
   const [showServerSettings, setShowServerSettings] = useState(false);
+  const [showDeployGuide, setShowDeployGuide] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<{ testing: boolean; message: string | null; ok: boolean | null }>({
+    testing: false,
+    message: null,
+    ok: null,
+  });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -160,11 +169,43 @@ export function TitleScreen({
     sounds.playClick();
   };
 
+  const handleTestHealth = async () => {
+    sounds.playClick();
+    setHealthStatus({ testing: true, message: 'Testing server connection...', ok: null });
+    const target = socketUrl.trim().replace(/\/+$/, '') || (typeof window !== 'undefined' ? window.location.origin : '');
+    const startTime = Date.now();
+    try {
+      const res = await fetch(`${target}/healthz`, { mode: 'cors', credentials: 'omit' });
+      const elapsed = Date.now() - startTime;
+      if (res.ok) {
+        setHealthStatus({ testing: false, message: `Connected! Server responded in ${elapsed}ms.`, ok: true });
+      } else {
+        setHealthStatus({ testing: false, message: `Server returned HTTP ${res.status}.`, ok: false });
+      }
+    } catch {
+      setHealthStatus({
+        testing: false,
+        message: 'Could not reach server. Verify URL, SSL/HTTPS, and host availability.',
+        ok: false,
+      });
+    }
+  };
+
+  const handleResetSocketUrl = () => {
+    sounds.playClick();
+    setSocketUrl('');
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('custom_socket_url');
+    }
+    onSaveSocketUrl?.('');
+    setHealthStatus({ testing: false, message: 'Reset to default host server.', ok: true });
+  };
+
   return (
     <div id="title-screen-container" className="relative w-full h-[100dvh] flex flex-col items-center justify-center overflow-hidden select-none animate-fade-in">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
-      {/* Top Bar with Audio Control */}
+      {/* Top Bar with Audio and Server Controls */}
       <div className="absolute top-4 right-6 z-20 flex items-center gap-3">
         <button
           id="btn-sound-toggle"
@@ -175,32 +216,126 @@ export function TitleScreen({
           {isMuted ? <VolumeX className="w-5 h-5 text-rose-400" /> : <Volume2 className="w-5 h-5 text-[#0ac8b9]" />}
         </button>
         <button
-          onClick={() => setShowServerSettings((visible) => !visible)}
-          className="p-2.5 rounded-full border border-[#c8aa6e]/40 bg-[#09141d]/80 text-[#c8aa6e] hover:bg-[#0ac8b9]/20 hover:border-[#0ac8b9] transition-all cursor-pointer shadow-lg"
-          title="Server Settings"
+          id="btn-server-settings-toggle"
+          onClick={() => {
+            sounds.playClick();
+            setShowServerSettings((visible) => !visible);
+          }}
+          className="p-2.5 rounded-full border border-[#c8aa6e]/40 bg-[#09141d]/80 text-[#c8aa6e] hover:bg-[#0ac8b9]/20 hover:border-[#0ac8b9] transition-all cursor-pointer shadow-lg relative"
+          title="Server & Online Play Settings"
         >
           <Server className="w-5 h-5 text-[#0ac8b9]" />
+          {!isServerConnected && !isServerConnecting && (
+            <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-400 border border-[#09141d]" />
+          )}
         </button>
       </div>
 
       {showServerSettings && (
-        <div className="absolute top-16 right-6 z-30 w-80 rounded-lg border border-[#c8aa6e]/50 bg-[#09141d]/95 p-4 shadow-xl backdrop-blur-md">
+        <div
+          id="server-settings-modal"
+          className="absolute top-16 right-4 sm:right-6 z-40 w-96 max-w-[calc(100vw-2rem)] rounded-xl border-2 border-[#c8aa6e]/60 bg-[#09141d]/95 p-5 shadow-2xl backdrop-blur-xl animate-fade-in"
+        >
+          <div className="flex items-center justify-between pb-3 border-b border-[#c8aa6e]/30 mb-3">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-[#c8aa6e]">
+              <Globe className="w-4 h-4 text-[#0ac8b9]" />
+              <span>Multiplayer Server</span>
+            </div>
+            <button
+              onClick={() => setShowServerSettings(false)}
+              className="text-zinc-400 hover:text-white text-xs p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="mb-3">
+            <span className="text-[10px] uppercase font-semibold text-zinc-400 block mb-1">Active Connection URL:</span>
+            <div className="text-xs font-mono px-2.5 py-1.5 rounded bg-[#050c12] border border-zinc-700 text-[#0ac8b9] truncate">
+              {getActiveSocketUrl()}
+            </div>
+          </div>
+
           <label className="block text-xs font-semibold uppercase tracking-wider text-[#c8aa6e] mb-1.5">
-            Multiplayer Backend URL
+            Custom Backend URL
           </label>
           <input
+            id="input-socket-url"
             value={socketUrl}
             onChange={(e) => setSocketUrl(e.target.value)}
-            placeholder="https://your-server.onrender.com"
-            className="w-full px-3 py-2 bg-[#050c12] border border-[#785a28] rounded-md text-[#f0e6d2] text-xs focus:outline-none focus:border-[#0ac8b9]"
+            placeholder="https://your-app.onrender.com"
+            className="w-full px-3 py-2 bg-[#050c12] border border-[#785a28] rounded-md text-[#f0e6d2] text-xs font-mono focus:outline-none focus:border-[#0ac8b9]"
           />
-          <p className="mt-2 text-[10px] text-zinc-400">Leave blank to use this site&apos;s server.</p>
-          <button
-            onClick={handleSaveSocketUrl}
-            className="mt-3 w-full rounded-md bg-[#0ac8b9] px-3 py-2 text-xs font-bold uppercase text-[#050c12] hover:brightness-110"
-          >
-            Save and reconnect
-          </button>
+          <p className="mt-1.5 text-[10px] text-zinc-400">
+            Leave blank to use this site&apos;s origin. If hosting backend on Render, Railway, or VPS, paste the URL here.
+          </p>
+
+          {/* Test Health / Latency Check */}
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              id="btn-test-health"
+              onClick={handleTestHealth}
+              disabled={healthStatus.testing}
+              className="flex-1 rounded border border-[#0ac8b9]/50 bg-[#005a82]/30 px-2.5 py-1.5 text-[11px] font-semibold text-[#0ac8b9] hover:bg-[#0ac8b9]/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${healthStatus.testing ? 'animate-spin' : ''}`} />
+              <span>Test Connection</span>
+            </button>
+            <button
+              id="btn-reset-server"
+              onClick={handleResetSocketUrl}
+              className="rounded border border-zinc-700 bg-zinc-900/80 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-zinc-800 transition-all cursor-pointer"
+            >
+              Reset Default
+            </button>
+          </div>
+
+          {healthStatus.message && (
+            <div
+              className={`mt-2 p-2 rounded text-[11px] flex items-center gap-2 ${
+                healthStatus.ok
+                  ? 'bg-emerald-950/80 border border-emerald-500/40 text-emerald-300'
+                  : 'bg-rose-950/80 border border-rose-500/40 text-rose-300'
+              }`}
+            >
+              {healthStatus.ok ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              )}
+              <span className="truncate">{healthStatus.message}</span>
+            </div>
+          )}
+
+          <div className="mt-4 flex gap-2">
+            <button
+              id="btn-save-socket-url"
+              onClick={handleSaveSocketUrl}
+              className="w-full rounded-md bg-[#0ac8b9] py-2 text-xs font-bold uppercase text-[#050c12] hover:brightness-110 shadow cursor-pointer transition-all"
+            >
+              Save & Reconnect
+            </button>
+          </div>
+
+          {/* Guide for playing outside AI Studio */}
+          <div className="mt-3 pt-3 border-t border-zinc-800">
+            <button
+              onClick={() => setShowDeployGuide((v) => !v)}
+              className="text-[11px] text-[#c8aa6e] hover:text-[#0ac8b9] transition-colors flex items-center gap-1 font-medium cursor-pointer"
+            >
+              <HelpCircle className="w-3 h-3" />
+              <span>How to play online outside Google AI Studio?</span>
+            </button>
+
+            {showDeployGuide && (
+              <div className="mt-2 text-[10px] text-zinc-300 bg-[#050c12] p-3 rounded border border-zinc-800 space-y-1.5 leading-relaxed">
+                <p className="font-semibold text-[#0ac8b9]">Playing with friends online:</p>
+                <p>1. Deploy the app repository to <span className="text-white font-mono">Render.com</span>, <span className="text-white font-mono">Railway.app</span>, or any Docker host (use included <span className="font-mono text-[#c8aa6e]">Dockerfile</span>).</p>
+                <p>2. Enter your live server URL above and click <span className="font-semibold text-white">Save & Reconnect</span>.</p>
+                <p>3. Share room codes or direct invite links with friends anywhere in the world!</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
