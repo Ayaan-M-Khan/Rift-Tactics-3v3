@@ -24,24 +24,29 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
+ENV PORT=8080
 
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
 # Copy built application and runtime assets
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/package-lock.json* ./package-lock.json
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/server.ts ./server.ts
+COPY --from=builder /app/next.config.ts ./next.config.ts
 COPY --from=builder /app/data ./data
 COPY --from=builder /app/types ./types
 COPY --from=builder /app/lib ./lib
 
+RUN chown -R nextjs:nodejs /app
+
 USER nextjs
 
-EXPOSE 3000
+EXPOSE 8080
 
-CMD ["npx", "tsx", "server.ts"]
+CMD ["npm", "start"]
